@@ -150,6 +150,9 @@ export async function captureOrder(orderId: string): Promise<{
   status?: number;
   amount: number;
   error?: string;
+  payerEmail?: string;
+  payerName?: string;
+  payerId?: string;
 }> {
   const token = await getAccessToken();
   if (!token) return { ok: false, amount: 0, error: "no_paypal_creds" };
@@ -171,12 +174,121 @@ export async function captureOrder(orderId: string): Promise<{
   }
 
   const data = (await res.json()) as {
+    payer?: {
+      email_address?: string;
+      payer_id?: string;
+      name?: { given_name?: string; surname?: string };
+    };
     purchase_units?: Array<{
       payments?: { captures?: Array<{ amount?: { value?: string } }> };
     }>;
   };
   const amount = Number(data.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value ?? 0);
-  return { ok: true, amount };
+  const payerName = [data.payer?.name?.given_name, data.payer?.name?.surname]
+    .filter(Boolean).join(" ") || undefined;
+  return {
+    ok: true,
+    amount,
+    payerEmail: data.payer?.email_address,
+    payerName,
+    payerId: data.payer?.payer_id,
+  };
+}
+
+/**
+ * Create a fresh PayPal order for a specific amount.
+ * Used by the per-contributor payment flow so each visitor gets their own order.
+ */
+export async function createOrderForAmount(amount: number, description: string): Promise<{
+  ok: boolean;
+  orderId?: string;
+  approveLink?: string;
+  error?: string;
+}> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, error: "no_paypal_creds" };
+
+  const res = await fetch(`${HOST}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": `rivulet-order-${Date.now()}`,
+    },
+    body: JSON.stringify({
+      intent: "CAPTURE",
+      purchase_units: [{
+        amount: { currency_code: "USD", value: amount.toFixed(2) },
+        description: description.slice(0, 127),
+      }],
+      application_context: { brand_name: "Rivulet", user_action: "PAY_NOW" },
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("[paypal] create order failed:", err);
+    return { ok: false, error: err };
+  }
+
+  const data = (await res.json()) as {
+    id?: string;
+    links?: Array<{ rel: string; href: string }>;
+  };
+  const approveLink =
+    data.links?.find((l) => l.rel === "payer-action")?.href ??
+    data.links?.find((l) => l.rel === "approve")?.href;
+
+  return { ok: true, orderId: data.id, approveLink };
+}
+
+/**
+ * Disburse PayPal payouts to all recipients on a flow whose state is not "paid".
+ * Returns per-payout results and a suggested final flow status.
+ * Used by both /api/capture (auto-disburse on goal completion) and
+ * /api/flows/approve (manual approval trigger).
+ */
+export interface PayoutResult {
+  label: string;
+  recipient: string;
+  amount: number;
+  ok: boolean;
+  batchId?: string;
+  itemStatus?: string;
+  error?: string;
+}
+
+export async function disburseFlowPayouts(
+  flow: { name: string; payouts: Array<{ label: string; amount: number; state: string; recipient?: string }> },
+): Promise<{ results: PayoutResult[]; finalStatus: "Paid out" | "Needs approval" }> {
+  const results: PayoutResult[] = [];
+
+  for (const p of flow.payouts) {
+    if (!p.recipient || !p.recipient.includes("@") || p.state === "paid") continue;
+
+    const result = await createPayout({
+      recipient: p.recipient,
+      recipientType: "EMAIL",
+      amount: p.amount,
+      note: `${flow.name} — ${p.label}`,
+    });
+
+    results.push({
+      label: p.label,
+      recipient: p.recipient,
+      amount: p.amount,
+      ok: result.ok,
+      batchId: result.batchId,
+      itemStatus: result.itemStatus,
+      error: result.error,
+    });
+  }
+
+  const anySuccess = results.length === 0 || results.some((r) => r.ok);
+  return {
+    results,
+    finalStatus: anySuccess ? "Paid out" : "Needs approval",
+  };
 }
 
 /**

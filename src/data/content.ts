@@ -7,18 +7,6 @@ import {
 
 export const BRAND = { name: "Rivulet", tagline: "Let money find its way." } as const;
 
-export interface NavItem {
-  label: string;
-  menu?: boolean;
-}
-
-export const NAV: NavItem[] = [
-  { label: "Product", menu: true },
-  { label: "Solutions", menu: true },
-  { label: "Templates" },
-  { label: "Resources", menu: true },
-];
-
 export interface Feature {
   icon: LucideIcon;
   tone: string;

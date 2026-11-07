@@ -474,8 +474,6 @@ export default function PaymentsPage() {
             rowHeight={52}
             headerHeight={44}
             rowClass="cursor-pointer"
-            /* enable row dragging to reorder */
-            rowDragManaged={true}
           />
         </div>
       )}

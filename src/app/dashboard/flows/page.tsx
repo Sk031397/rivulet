@@ -80,10 +80,11 @@ function PayoutsCell({ data }: { data: Flow }) {
 }
 
 /* ── FlowPanel slide-over (unchanged logic) ─────────────────────────── */
-function FlowPanel({ flow, onClose, onDelete }: {
+function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
   flow: Flow;
   onClose: () => void;
   onDelete?: (flowId: string) => void;
+  refreshFlows: () => void;
 }) {
   const [copied, setCopied]           = useState(false);
   const [approved, setApproved]       = useState(false);
@@ -127,7 +128,20 @@ function FlowPanel({ flow, onClose, onDelete }: {
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-white/50">Flow details</p>
             {editingName ? (
-              <form onSubmit={(e) => { e.preventDefault(); setEditingName(false); }} className="mt-1 flex items-center gap-2">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!name.trim()) return;
+                try {
+                  await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: name.trim() }),
+                  });
+                  refreshFlows();
+                } finally {
+                  setEditingName(false);
+                }
+              }} className="mt-1 flex items-center gap-2">
                 <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
                   className="rounded-lg bg-white/10 px-2 py-1 text-base font-extrabold text-white outline-none ring-2 ring-ultra" />
                 <button type="submit" className="rounded-full bg-ultra px-2.5 py-1 text-xs font-bold text-white hover:bg-saffron">Save</button>
@@ -509,6 +523,7 @@ export default function FlowsPage() {
         <FlowPanel
           flow={openFlow}
           onClose={() => setOpenFlow(null)}
+          refreshFlows={refreshFlows}
           onDelete={(id) => {
             setFlows((prev) => prev.filter((f) => f.id !== id));
             setOpenFlow(null);

@@ -2,8 +2,8 @@ import { generateText } from "ai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { NextRequest } from "next/server";
-import { FlowSchema, toDashboardFlow, type FlowPlan } from "@/lib/flow";
-import { getAccessToken, hasPayPalCreds } from "@/lib/paypal";
+import { FlowSchema, toDashboardFlow, mockFlow, type FlowPlan } from "@/lib/flow";
+import { createOrderForAmount, hasPayPalCreds } from "@/lib/paypal";
 import { saveFlow } from "@/lib/store";
 
 /* ─── Bedrock ────────────────────────────────────────────────────────── */
@@ -74,56 +74,6 @@ function retryAfterSeconds(err: unknown): number | null {
   return m ? Math.ceil(Number(m[1])) : null;
 }
 
-/* ─── PayPal: create a real sandbox order ───────────────────────────── */
-interface PayPalOrderLink { rel: string; href: string; method: string }
-interface PayPalOrderResponse { id?: string; links?: PayPalOrderLink[]; status?: string }
-
-async function createPayPalOrder(goal: number, description: string) {
-  const token = await getAccessToken();
-  if (!token) return null;
-
-  const host =
-    process.env.PAYPAL_ENVIRONMENT === "PRODUCTION"
-      ? "https://api-m.paypal.com"
-      : "https://api-m.sandbox.paypal.com";
-
-  const res = await fetch(`${host}/v2/checkout/orders`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "PayPal-Request-Id": `rivulet-${Date.now()}`,
-    },
-    body: JSON.stringify({
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: { currency_code: "USD", value: goal.toFixed(2) },
-          description: description.slice(0, 127),
-        },
-      ],
-      application_context: {
-        brand_name: "Rivulet",
-        user_action: "PAY_NOW",
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    console.error("[build-flow] PayPal order failed:", err);
-    return null;
-  }
-
-  const data = (await res.json()) as PayPalOrderResponse;
-  const approveLink =
-    data.links?.find((l) => l.rel === "payer-action")?.href ??
-    data.links?.find((l) => l.rel === "approve")?.href ??
-    null;
-
-  return { id: data.id ?? null, link: approveLink };
-}
-
 /* ─── Route ──────────────────────────────────────────────────────────── */
 export async function POST(req: NextRequest) {
   let prompt = "";
@@ -152,12 +102,12 @@ export async function POST(req: NextRequest) {
     const resources: FlowPlan["resources"] = [];
 
     if (hasPayPalCreds()) {
-      const order = await createPayPalOrder(plan.goal, plan.summary ?? plan.name);
-      if (order) {
+      const order = await createOrderForAmount(plan.goal, plan.summary ?? plan.name);
+      if (order.ok && order.orderId) {
         resources.push({
           kind: "PayPal Order",
-          id: order.id,
-          link: order.link,
+          id: order.orderId,
+          link: order.approveLink ?? null,
           note: `Collect $${plan.goal.toFixed(2)} — share this link for contributors to pay`,
         });
       }
@@ -187,9 +137,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return Response.json(
-      { error: String((err as Error)?.message ?? err) },
-      { status: 500 },
-    );
+    // Bedrock unavailable or parse error — fall back to a mock flow
+    // so the UI always works even without AWS credentials.
+    console.warn("[build-flow] falling back to mockFlow");
+    const flow = mockFlow(prompt);
+    saveFlow(flow);
+    return Response.json({ flow, mode: "mock" });
   }
 }

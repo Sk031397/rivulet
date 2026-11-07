@@ -93,6 +93,9 @@ export default function OverviewPage() {
             {selected && (
               <FlowDetail
                 flow={selected}
+                onRename={(id, newName) => {
+                  setFlows((prev) => prev.map((f) => f.id === id ? { ...f, name: newName } : f));
+                }}
                 onDelete={(id) => {
                   setFlows((prev) => prev.filter((f) => f.id !== id));
                   setSelectedId((cur) => (cur === id ? null : cur));

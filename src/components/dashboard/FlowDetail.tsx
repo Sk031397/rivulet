@@ -84,11 +84,12 @@ interface ApproveResponse {
   error?: string;
 }
 
-export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: (flowId: string) => void }) {
+export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; onDelete?: (flowId: string) => void; onRename?: (flowId: string, name: string) => void }) {
   const needsApproval = flow.status === "Needs approval";
   const [shareOpen, setShareOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(flow.name);
+  const [saving, setSaving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approveResult, setApproveResult] = useState<ApproveResponse["payouts"] | null>(null);
@@ -100,7 +101,22 @@ export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: 
         <div className="min-w-0 flex-1">
           {editing ? (
             <form
-              onSubmit={(e) => { e.preventDefault(); setEditing(false); }}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!name.trim() || saving) return;
+                setSaving(true);
+                try {
+                  await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: name.trim() }),
+                  });
+                  onRename?.(flow.id, name.trim());
+                } finally {
+                  setSaving(false);
+                  setEditing(false);
+                }
+              }}
               className="flex items-center gap-2"
             >
               <input
@@ -109,8 +125,8 @@ export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: 
                 onChange={(e) => setName(e.target.value)}
                 className="flex-1 rounded-xl bg-paper px-3 py-1.5 text-lg font-extrabold text-ink outline-none ring-2 ring-ultra"
               />
-              <button type="submit" className="rounded-full bg-ultra px-3 py-1.5 text-xs font-bold text-white hover:bg-ink">
-                Save
+              <button type="submit" disabled={saving} className="rounded-full bg-ultra px-3 py-1.5 text-xs font-bold text-white hover:bg-ink disabled:opacity-60">
+                {saving ? "Saving…" : "Save"}
               </button>
               <button type="button" onClick={() => { setName(flow.name); setEditing(false); }} className="rounded-full px-3 py-1.5 text-xs font-bold text-ink/60 hover:text-ink">
                 Cancel
