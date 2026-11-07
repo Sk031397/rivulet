@@ -61,6 +61,8 @@ export interface Payout {
   amount: number;
   state: PayoutState;
   note: string;
+  /** PayPal email of the recipient — required for real disbursement on approval. */
+  recipient?: string;
 }
 
 export interface FlowResource {

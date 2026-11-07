@@ -16,6 +16,7 @@ export const FlowSchema = z.object({
         amount: z.number().nonnegative(),
         state: z.enum(["paid", "pending", "locked"]),
         note: z.string().max(140),
+        recipient: z.string().max(200).nullable().optional(),
       }),
     )
     .min(1)
@@ -55,6 +56,7 @@ export function toDashboardFlow(plan: FlowPlan): Flow {
       amount: p.amount,
       state: p.state,
       note: p.note,
+      ...(p.recipient ? { recipient: p.recipient } : {}),
     })),
     resources: plan.resources ?? [],
   };

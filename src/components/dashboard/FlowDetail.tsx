@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock, Lock, Users, Copy, X, ExternalLink } from "lucide-react";
+import { Check, Clock, Lock, Users, Copy, X, ExternalLink, Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import StatusPill from "./StatusPill";
 import type { Flow, PayoutState } from "@/data/dashboard";
@@ -63,12 +63,35 @@ function ShareModal({ flowId, flowName, onClose }: { flowId: string; flowName: s
   );
 }
 
+interface PayoutResult {
+  label: string;
+  recipient: string;
+  amount: number;
+  ok: boolean;
+  batchId?: string;
+  itemStatus?: string;
+  error?: string;
+}
+
+interface ApproveResponse {
+  flow?: Flow;
+  payouts?: {
+    attempted: number;
+    disbursed: number;
+    failed: number;
+    results: PayoutResult[];
+  };
+  error?: string;
+}
+
 export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: (flowId: string) => void }) {
   const needsApproval = flow.status === "Needs approval";
   const [shareOpen, setShareOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(flow.name);
   const [approved, setApproved] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approveResult, setApproveResult] = useState<ApproveResponse["payouts"] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
@@ -128,6 +151,11 @@ export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: 
               <p className="mt-3 text-sm font-bold text-ink">{p.label}</p>
               <p className="text-xl font-extrabold text-ink">${p.amount}</p>
               <p className="mt-1 text-xs leading-snug text-ink/65">{p.note}</p>
+              {p.recipient && (
+                <p className="mt-2 truncate rounded-lg bg-ultra/10 px-2 py-1 text-[11px] font-mono text-ultra">
+                  &#8594; {p.recipient}
+                </p>
+              )}
             </li>
           );
         })}
@@ -158,19 +186,29 @@ export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: 
         {needsApproval && !approved && (
           <button
             type="button"
+            disabled={approving}
             onClick={async () => {
-              setApproved(true);
+              setApproving(true);
               try {
-                await fetch("/api/flows/approve", {
+                const res = await fetch("/api/flows/approve", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ flowId: flow.id }),
                 });
+                const data = (await res.json()) as ApproveResponse;
+                setApproveResult(data.payouts ?? null);
               } catch { /* the next /api/flows poll reconciles the status */ }
+              finally {
+                setApproving(false);
+                setApproved(true);
+              }
             }}
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra"
+            className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Check className="size-4" /> Approve payouts
+            {approving
+              ? <><Loader2 className="size-4 animate-spin" /> Sending payouts…</>
+              : <><Check className="size-4" /> Approve payouts</>
+            }
           </button>
         )}
         {approved && (
@@ -223,6 +261,37 @@ export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: 
       </div>
 
       {shareOpen && <ShareModal flowId={flow.id} flowName={name} onClose={() => setShareOpen(false)} />}
+
+      {/* Payout disbursement results */}
+      {approveResult && (
+        <div className="mt-5 rounded-2xl bg-paper p-5 ring-1 ring-ink/5">
+          <p className="text-sm font-extrabold text-ink">
+            Payout results · {approveResult.disbursed}/{approveResult.attempted} sent
+          </p>
+          <ul className="mt-3 space-y-2">
+            {approveResult.results.map((r) => (
+              <li key={r.label} className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm ${r.ok ? "bg-mint/20" : "bg-coral/10"}`}>
+                <div className="min-w-0">
+                  <p className="font-bold text-ink truncate">{r.label} · <span className="font-mono text-xs">{r.recipient}</span></p>
+                  {r.ok
+                    ? <p className="text-xs text-emerald-700">Sent ${r.amount.toFixed(2)} · batch {r.batchId ?? "—"} · {r.itemStatus ?? "—"}</p>
+                    : <p className="text-xs text-coral truncate">Failed: {r.error ?? "unknown error"}</p>
+                  }
+                </div>
+                {r.ok
+                  ? <Check className="size-4 shrink-0 text-emerald-600" />
+                  : <X className="size-4 shrink-0 text-coral" />
+                }
+              </li>
+            ))}
+          </ul>
+          {approveResult.attempted === 0 && (
+            <p className="mt-2 text-xs text-ink/55">
+              No recipient emails were set on this flow&apos;s payouts — status updated to Paid out but no PayPal payouts were sent. Add recipient emails when building a flow to enable automatic disbursement.
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

@@ -1,13 +1,8 @@
 import type { NextRequest } from "next/server";
 import { createPayout } from "@/lib/paypal";
+import { sendPaymentReceivedEmail } from "@/lib/email";
 
-/**
- * POST /api/send
- * Body: { recipient, amount, note? }
- * Sends a PayPal payout to a friend. Auto-detects the recipient type from the
- * input: an "@" → EMAIL (works in sandbox), otherwise PHONE (production only —
- * the sandbox does not support the PHONE recipient type).
- */
+
 export async function POST(req: NextRequest) {
   let body: { recipient?: unknown; amount?: unknown; note?: unknown };
   try {
@@ -39,6 +34,11 @@ export async function POST(req: NextRequest) {
   const payout = await createPayout({ recipient, recipientType, amount, note });
   if (!payout.ok) {
     return Response.json({ error: payout.error ?? "payout failed", paypalStatus: payout.status }, { status: 502 });
+  }
+
+  // Branded receipt email for email recipients (fire-and-forget; never blocks the payout).
+  if (recipientType === "EMAIL") {
+    await sendPaymentReceivedEmail({ to: recipient, amount, note });
   }
 
   return Response.json({

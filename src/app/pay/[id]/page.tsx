@@ -20,6 +20,28 @@ declare global {
   }
 }
 
+interface PayoutResult {
+  label: string;
+  recipient: string;
+  amount: number;
+  ok: boolean;
+  batchId?: string;
+  itemStatus?: string;
+  error?: string;
+}
+
+interface CaptureResponse {
+  flow?: Flow;
+  error?: string;
+  autoDisburse?: boolean;
+  payouts?: {
+    attempted: number;
+    disbursed: number;
+    failed: number;
+    results: PayoutResult[];
+  };
+}
+
 const money = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -31,6 +53,7 @@ export default function PayPage() {
   const [paid, setPaid] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState("");
+  const [disburseResult, setDisburseResult] = useState<CaptureResponse["payouts"] | null>(null);
   const btnRef = useRef<HTMLDivElement>(null);
   const renderedRef = useRef(false);
 
@@ -84,9 +107,10 @@ export default function PayPage() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ orderId: data.orderID, flowId }),
             });
-            const result = (await res.json()) as { flow?: Flow; error?: string };
+            const result = (await res.json()) as CaptureResponse;
             if (!res.ok) throw new Error(result.error ?? "Capture failed");
             if (result.flow) setFlow(result.flow);
+            if (result.payouts) setDisburseResult(result.payouts);
             setPaid(true);
           } catch (e) {
             setError((e as Error).message ?? "Capture failed");
@@ -166,16 +190,54 @@ export default function PayPage() {
       {/* checkout / status */}
       <div className="mt-8">
         {paid ? (
-          <div className="rounded-2xl bg-mint/25 p-6 text-center">
-            <Check className="mx-auto size-8 text-emerald-700" />
-            <p className="mt-2 text-lg font-extrabold text-emerald-700">Payment received — thank you!</p>
-            <p className="mt-1 text-sm text-ink/65">Your contribution has been captured in the PayPal sandbox.</p>
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-mint/25 p-6 text-center">
+              <Check className="mx-auto size-8 text-emerald-700" />
+              <p className="mt-2 text-lg font-extrabold text-emerald-700">Payment received — thank you!</p>
+              <p className="mt-1 text-sm text-ink/65">
+                {disburseResult && disburseResult.attempted > 0
+                  ? `Your contribution triggered automatic payouts to ${disburseResult.disbursed} recipient${disburseResult.disbursed === 1 ? "" : "s"}.`
+                  : "Your contribution has been captured successfully."}
+              </p>
+            </div>
+
+            {/* Auto-disburse breakdown */}
+            {disburseResult && disburseResult.attempted > 0 && (
+              <div className="rounded-2xl bg-paper p-4 ring-1 ring-ink/8">
+                <p className="mb-3 text-xs font-extrabold uppercase tracking-wider text-ink/50">
+                  Payouts sent automatically
+                </p>
+                <ul className="space-y-2">
+                  {disburseResult.results.map((r) => (
+                    <li
+                      key={r.label}
+                      className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm ${
+                        r.ok ? "bg-mint/20" : "bg-coral/10"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-bold text-ink truncate">{r.label}</p>
+                        <p className="text-[11px] font-mono text-ink/55 truncate">{r.recipient}</p>
+                        {r.ok
+                          ? <p className="text-xs text-emerald-700">{money(r.amount)} · {r.itemStatus ?? "sent"}</p>
+                          : <p className="text-xs text-coral truncate">{r.error ?? "failed"}</p>
+                        }
+                      </div>
+                      {r.ok
+                        ? <Check className="size-4 shrink-0 text-emerald-600" />
+                        : <Lock className="size-4 shrink-0 text-coral" />
+                      }
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ) : funded ? (
           <div className="rounded-2xl bg-paper p-6 text-center ring-1 ring-ink/8">
             <Check className="mx-auto size-8 text-emerald-700" />
             <p className="mt-2 text-lg font-extrabold text-ink">This flow is fully funded</p>
-            <p className="mt-1 text-sm text-ink/60">Thanks to all contributors — payouts are being processed.</p>
+            <p className="mt-1 text-sm text-ink/60">Thanks to all contributors — payouts have been sent automatically.</p>
           </div>
         ) : !orderResource?.id ? (
           <div className="rounded-2xl bg-paper p-6 text-center ring-1 ring-ink/8">
@@ -204,9 +266,14 @@ export default function PayPage() {
         <p className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink/50">Where the money goes</p>
         <ul className="space-y-2">
           {flow.payouts.map((p) => (
-            <li key={p.label} className="flex items-center justify-between rounded-2xl bg-paper p-3 text-sm">
-              <span className="font-bold text-ink">{p.label}</span>
-              <span className="font-extrabold text-ink">{money(p.amount)}</span>
+            <li key={p.label} className="flex items-center justify-between gap-3 rounded-2xl bg-paper p-3 text-sm">
+              <div className="min-w-0">
+                <p className="font-bold text-ink">{p.label}</p>
+                {p.recipient && (
+                  <p className="truncate text-[11px] font-mono text-ink/50">{p.recipient}</p>
+                )}
+              </div>
+              <span className="shrink-0 font-extrabold text-ink">{money(p.amount)}</span>
             </li>
           ))}
         </ul>

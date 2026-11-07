@@ -31,6 +31,13 @@ export default function OverviewPage() {
       .catch(() => {});
   }, []);
 
+  const refreshStats = useCallback(() => {
+    fetch("/api/stats")
+      .then((r) => r.json())
+      .then((d: { stats?: Stat[] }) => { if (d.stats) setStats(d.stats); })
+      .catch(() => {});
+  }, []);
+
   // Load flows + activity + stats on mount
   useEffect(() => {
     refreshFlows();
@@ -40,17 +47,17 @@ export default function OverviewPage() {
       .then((d: { items?: ActivityItem[] }) => { if (d.items) setActivity(d.items); })
       .catch(() => {});
 
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then((d: { stats?: Stat[] }) => { if (d.stats) setStats(d.stats); })
-      .catch(() => {});
-  }, [refreshFlows]);
+    refreshStats();
+  }, [refreshFlows, refreshStats]);
 
   // Poll every 10 seconds so webhook-driven updates appear automatically
   useEffect(() => {
-    const id = setInterval(refreshFlows, 10_000);
+    const id = setInterval(() => {
+      refreshFlows();
+      refreshStats();
+    }, 10_000);
     return () => clearInterval(id);
-  }, [refreshFlows]);
+  }, [refreshFlows, refreshStats]);
 
   /** Called by PromptBox when a new flow is created. */
   const handleBuild = (flow: Flow) => {
@@ -62,6 +69,8 @@ export default function OverviewPage() {
     });
     setSelectedId(flow.id);
     try { localStorage.setItem("rivulet-flows", JSON.stringify([flow, ...flows])); } catch { /* ignore */ }
+    // Stats depend on flow count — refresh immediately
+    refreshStats();
   };
 
   return (
@@ -87,6 +96,7 @@ export default function OverviewPage() {
                 onDelete={(id) => {
                   setFlows((prev) => prev.filter((f) => f.id !== id));
                   setSelectedId((cur) => (cur === id ? null : cur));
+                  refreshStats();
                 }}
               />
             )}

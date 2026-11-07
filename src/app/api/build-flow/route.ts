@@ -29,7 +29,8 @@ Required shape:
       "label": "<payout name>",
       "amount": <USD number>,
       "state": "pending",
-      "note": "<when/how this releases>"
+      "note": "<when/how this releases>",
+      "recipient": "<PayPal email of the recipient, or null if not known>"
     }
   ],
   "resources": []
@@ -39,6 +40,7 @@ Rules:
 - payouts must be an array with 1–8 items
 - payout amounts should roughly sum to the goal
 - state must be "paid", "pending", or "locked"
+- recipient must be a valid email string if the user mentioned a specific person's email, otherwise null
 - resources must be an empty array (the system will fill it in)
 - goal must be a positive number`;
 
