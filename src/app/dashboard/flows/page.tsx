@@ -20,18 +20,19 @@ const STATE: Record<PayoutState, { icon: LucideIcon; label: string; chip: string
   locked:  { icon: Lock,  label: "On hold", chip: "bg-ink/10 text-ink",           icon_bg: "bg-ink text-white"  },
 };
 /* ── share-link helper ───────────────────────────────────────────────── */
-function collectLink(flowName: string) {
+function collectLink(flowId: string) {
   const base = typeof window !== "undefined" ? window.location.origin : "https://rivulet.app";
-  return `${base}/pay/${encodeURIComponent(flowName.toLowerCase().replace(/\s+/g, "-"))}`;
+  return `${base}/pay/${encodeURIComponent(flowId)}`;
 }
 
 /* ── slide-over panel ────────────────────────────────────────────────── */
-function FlowPanel({ flow, onClose }: { flow: Flow; onClose: () => void }) {
+function FlowPanel({ flow, onClose, onDelete }: { flow: Flow; onClose: () => void; onDelete?: (flowId: string) => void }) {
   const [copied, setCopied] = useState(false);
   const [approved, setApproved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(flow.name);
-  const link = collectLink(name);
+  const link = collectLink(flow.id);
 
   /* close on Escape */
   useEffect(() => {
@@ -219,7 +220,16 @@ function FlowPanel({ flow, onClose }: { flow: Flow; onClose: () => void }) {
           {needsApproval && !approved && (
             <button
               type="button"
-              onClick={() => setApproved(true)}
+              onClick={async () => {
+                setApproved(true);
+                try {
+                  await fetch("/api/flows/approve", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ flowId: flow.id }),
+                  });
+                } catch { /* the next /api/flows poll reconciles the status */ }
+              }}
               className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra"
             >
               <Check className="size-4" /> Approve payouts
@@ -237,6 +247,34 @@ function FlowPanel({ flow, onClose }: { flow: Flow; onClose: () => void }) {
           >
             <Copy className="size-4" /> {copied ? "Copied!" : "Share link"}
           </button>
+          {confirmDelete ? (
+            <span className="inline-flex items-center gap-2 rounded-full bg-coral/10 px-5 py-2.5 text-sm font-bold text-coral">
+              Delete this flow?
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, { method: "DELETE" });
+                  } catch { /* proceed optimistically */ }
+                  onDelete?.(flow.id);
+                }}
+                className="rounded-full bg-coral px-3 py-1 text-xs text-white hover:bg-coral/80"
+              >
+                Delete
+              </button>
+              <button type="button" onClick={() => setConfirmDelete(false)} className="text-xs text-ink/60 hover:text-ink">
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="rounded-full px-5 py-2.5 text-sm font-bold text-ink/45 transition hover:text-coral"
+            >
+              Delete
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -397,7 +435,16 @@ export default function FlowsPage() {
       )}
 
       {/* slide-over */}
-      {openFlow && <FlowPanel flow={openFlow} onClose={() => setOpenFlow(null)} />}
+      {openFlow && (
+        <FlowPanel
+          flow={openFlow}
+          onClose={() => setOpenFlow(null)}
+          onDelete={(id) => {
+            setFlows((prev) => prev.filter((f) => f.id !== id));
+            setOpenFlow(null);
+          }}
+        />
+      )}
     </>
   );
 }

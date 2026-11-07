@@ -11,10 +11,10 @@ npm run start     # serve the build (uses PORT, default 3000; .env.example sets 
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Leave credentials blank to run in **MOCK mode** (no real AI and no real PayPal API calls — the UI still works with sample data).
+Copy `.env.example` to `.env`.
 
-- `OPENAI_API_KEY` — drives the flow-building LLM. Blank → deterministic mock flow builder.
-- `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` — PayPal sandbox/production credentials for the "watch it run" layer.
+- `AWS_REGION` — AWS region for the AI flow builder (Amazon Bedrock). Defaults to `us-east-1`. Credentials are resolved through the Node credential provider chain, so set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or use `~/.aws/credentials`, an IAM role, etc.). The AI layer has no mock fallback — building a flow requires valid AWS credentials.
+- `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` — PayPal sandbox/production credentials for the "watch it run" layer. Leave these blank to run in **MOCK mode**: the activity feed and stats fall back to sample data and no real PayPal API calls are made.
 - `PAYPAL_ENVIRONMENT` — `SANDBOX` (default) or `PRODUCTION`.
 
 ## Where things live

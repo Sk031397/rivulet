@@ -1,6 +1,6 @@
 import {
   LayoutGrid, GitFork, ArrowLeftRight, Users, LayoutTemplate, Settings,
-  Plane, Music2, Wand2, Heart, MessageCircle,
+  Send, Plane, Music2, Wand2, Heart, MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,6 +24,7 @@ export interface SidebarItem {
 
 export const SIDEBAR: SidebarItem[] = [
   { icon: LayoutGrid,    label: "Overview",  path: "/dashboard"           },
+  { icon: Send,          label: "Send",      path: "/dashboard/send"      },
   { icon: GitFork,       label: "Flows",     path: "/dashboard/flows"     },
   { icon: ArrowLeftRight,label: "Payments",  path: "/dashboard/payments"  },
   { icon: Users,         label: "People",    path: "/dashboard/people"    },

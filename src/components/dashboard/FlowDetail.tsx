@@ -12,11 +12,11 @@ const STATE: Record<PayoutState, { icon: LucideIcon; label: string; chip: string
   locked: { icon: Lock, label: "On hold", chip: "bg-ink/10 text-ink", icon_bg: "bg-ink text-white" },
 };
 
-function ShareModal({ flowName, onClose }: { flowName: string; onClose: () => void }) {
+function ShareModal({ flowId, flowName, onClose }: { flowId: string; flowName: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const link = typeof window !== "undefined"
-    ? `${window.location.origin}/pay/${encodeURIComponent(flowName.toLowerCase().replace(/\s+/g, "-"))}`
-    : `https://rivulet.app/pay/${encodeURIComponent(flowName.toLowerCase().replace(/\s+/g, "-"))}`;
+    ? `${window.location.origin}/pay/${encodeURIComponent(flowId)}`
+    : `https://rivulet.app/pay/${encodeURIComponent(flowId)}`;
 
   const copy = async () => {
     await navigator.clipboard.writeText(link);
@@ -63,12 +63,13 @@ function ShareModal({ flowName, onClose }: { flowName: string; onClose: () => vo
   );
 }
 
-export default function FlowDetail({ flow }: { flow: Flow }) {
+export default function FlowDetail({ flow, onDelete }: { flow: Flow; onDelete?: (flowId: string) => void }) {
   const needsApproval = flow.status === "Needs approval";
   const [shareOpen, setShareOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(flow.name);
   const [approved, setApproved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <section className="rounded-3xl bg-white p-6 ring-1 ring-ink/5">
@@ -157,7 +158,16 @@ export default function FlowDetail({ flow }: { flow: Flow }) {
         {needsApproval && !approved && (
           <button
             type="button"
-            onClick={() => setApproved(true)}
+            onClick={async () => {
+              setApproved(true);
+              try {
+                await fetch("/api/flows/approve", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ flowId: flow.id }),
+                });
+              } catch { /* the next /api/flows poll reconciles the status */ }
+            }}
             className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra"
           >
             <Check className="size-4" /> Approve payouts
@@ -182,9 +192,37 @@ export default function FlowDetail({ flow }: { flow: Flow }) {
         >
           <Copy className="size-4" /> Share link
         </button>
+        {confirmDelete ? (
+          <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-coral/10 px-4 py-2.5 text-sm font-bold text-coral">
+            Delete this flow?
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, { method: "DELETE" });
+                } catch { /* proceed optimistically */ }
+                onDelete?.(flow.id);
+              }}
+              className="rounded-full bg-coral px-3 py-1 text-xs text-white hover:bg-coral/80"
+            >
+              Delete
+            </button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="text-xs text-ink/60 hover:text-ink">
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            className="ml-auto rounded-full px-4 py-2.5 text-sm font-bold text-ink/45 transition hover:text-coral"
+          >
+            Delete flow
+          </button>
+        )}
       </div>
 
-      {shareOpen && <ShareModal flowName={name} onClose={() => setShareOpen(false)} />}
+      {shareOpen && <ShareModal flowId={flow.id} flowName={name} onClose={() => setShareOpen(false)} />}
     </section>
   );
 }

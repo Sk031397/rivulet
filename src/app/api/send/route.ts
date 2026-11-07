@@ -1,0 +1,53 @@
+import type { NextRequest } from "next/server";
+import { createPayout } from "@/lib/paypal";
+
+/**
+ * POST /api/send
+ * Body: { recipient, amount, note? }
+ * Sends a PayPal payout to a friend. Auto-detects the recipient type from the
+ * input: an "@" → EMAIL (works in sandbox), otherwise PHONE (production only —
+ * the sandbox does not support the PHONE recipient type).
+ */
+export async function POST(req: NextRequest) {
+  let body: { recipient?: unknown; amount?: unknown; note?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const recipient = (body.recipient ?? "").toString().trim();
+  const amount = Number(body.amount);
+  const note = (body.note ?? "").toString().trim();
+
+  if (!recipient) return Response.json({ error: "recipient is required" }, { status: 400 });
+  if (!amount || amount <= 0) return Response.json({ error: "a positive amount is required" }, { status: 400 });
+
+  const recipientType = recipient.includes("@") ? ("EMAIL" as const) : ("PHONE" as const);
+
+  // Sandbox cannot pay out to a phone number — fail fast with a clear message.
+  if (recipientType === "PHONE" && process.env.PAYPAL_ENVIRONMENT !== "PRODUCTION") {
+    return Response.json(
+      {
+        error:
+          "Phone-number payouts aren't supported in the PayPal sandbox. To test, use a sandbox account's email address — phone numbers work in production.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const payout = await createPayout({ recipient, recipientType, amount, note });
+  if (!payout.ok) {
+    return Response.json({ error: payout.error ?? "payout failed", paypalStatus: payout.status }, { status: 502 });
+  }
+
+  return Response.json({
+    result: {
+      recipient,
+      recipientType,
+      amount,
+      batchId: payout.batchId,
+      itemStatus: payout.itemStatus,
+    },
+  });
+}

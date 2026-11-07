@@ -81,7 +81,15 @@ export default function OverviewPage() {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <FlowList flows={flows} selectedId={selectedId ?? ""} onSelect={setSelectedId} />
           <div className="space-y-6">
-            {selected && <FlowDetail flow={selected} />}
+            {selected && (
+              <FlowDetail
+                flow={selected}
+                onDelete={(id) => {
+                  setFlows((prev) => prev.filter((f) => f.id !== id));
+                  setSelectedId((cur) => (cur === id ? null : cur));
+                }}
+              />
+            )}
             {activity.length > 0 && <ActivityFeed items={activity} />}
           </div>
         </div>

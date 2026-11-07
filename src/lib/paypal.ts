@@ -143,3 +143,94 @@ export function transactionsToStats(details: PayPalTransaction[]): {
   }
   return { collected, paidOut, count };
 }
+
+/** Capture an approved PayPal order, settling the payment. */
+export async function captureOrder(orderId: string): Promise<{
+  ok: boolean;
+  status?: number;
+  amount: number;
+  error?: string;
+}> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, amount: 0, error: "no_paypal_creds" };
+
+  const res = await fetch(`${HOST}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": `rivulet-capture-${Date.now()}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("[paypal] capture failed:", err);
+    return { ok: false, status: res.status, amount: 0, error: err };
+  }
+
+  const data = (await res.json()) as {
+    purchase_units?: Array<{
+      payments?: { captures?: Array<{ amount?: { value?: string } }> };
+    }>;
+  };
+  const amount = Number(data.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value ?? 0);
+  return { ok: true, amount };
+}
+
+/**
+ * Send a single PayPal payout to a recipient (email, phone, or PayPal ID)
+ * via the Payouts API. Note: the PayPal sandbox does NOT support the PHONE
+ * recipient type — only EMAIL (and PAYPAL_ID) work there; PHONE works in live.
+ */
+export async function createPayout(params: {
+  recipient: string;
+  recipientType: "EMAIL" | "PHONE" | "PAYPAL_ID";
+  amount: number;
+  note?: string;
+}): Promise<{ ok: boolean; status?: number; batchId?: string; itemStatus?: string; error?: string }> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, error: "no_paypal_creds" };
+
+  const res = await fetch(`${HOST}/v1/payments/payouts`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender_batch_header: {
+        sender_batch_id: `rivulet-send-${Date.now()}`,
+        email_subject: "You have a payment from Rivulet",
+        email_message: "You've received money through Rivulet.",
+      },
+      items: [
+        {
+          recipient_type: params.recipientType,
+          amount: { value: params.amount.toFixed(2), currency: "USD" },
+          note: params.note ? params.note.slice(0, 255) : "Payment from Rivulet",
+          sender_item_id: `rivulet-item-${Date.now()}`,
+          receiver: params.recipient,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error("[paypal] payout failed:", err);
+    return { ok: false, status: res.status, error: err };
+  }
+
+  const data = (await res.json()) as {
+    batch_header?: { payout_batch_id?: string };
+    items?: Array<{ payout_item_id?: string; transaction_status?: string }>;
+  };
+  const item = data.items?.[0];
+  return {
+    ok: true,
+    batchId: data.batch_header?.payout_batch_id,
+    itemStatus: item?.transaction_status,
+  };
+}
