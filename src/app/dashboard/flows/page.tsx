@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, ArrowUpRight, X, Check, Clock, Lock, Users, Copy, ExternalLink } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -253,9 +253,30 @@ function FlowPanel({ flow, onClose }: { flow: Flow; onClose: () => void }) {
 /* ── main page ───────────────────────────────────────────────────────── */
 export default function FlowsPage() {
   const router = useRouter();
-  const [flows] = useState<Flow[]>([]);
+  const [flows, setFlows] = useState<Flow[]>([]);
   const [filter, setFilter] = useState<FlowFilter>("All");
   const [openFlow, setOpenFlow] = useState<Flow | null>(null);
+
+  /** Fetch flows from the server store — keeps this list in sync with the Overview page. */
+  const refreshFlows = useCallback(() => {
+    fetch("/api/flows")
+      .then((r) => r.json())
+      .then((d: { flows?: Flow[] }) => {
+        if (d.flows) setFlows(d.flows);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load flows on mount
+  useEffect(() => {
+    refreshFlows();
+  }, [refreshFlows]);
+
+  // Poll every 10 seconds so flows built on the Overview page appear here too
+  useEffect(() => {
+    const id = setInterval(refreshFlows, 10_000);
+    return () => clearInterval(id);
+  }, [refreshFlows]);
 
   const visible: Flow[] = filter === "All" ? flows : flows.filter((f) => f.status === (filter as FlowStatus));
 
