@@ -43,15 +43,19 @@ const slug = (s: string) =>
     .slice(0, 28) || "flow";
 
 /** Convert a validated LLM plan into the dashboard's Flow shape. */
-export function toDashboardFlow(plan: FlowPlan): Flow {
+export function toDashboardFlow(plan: FlowPlan, ownerId: string): Flow {
+  const flowId = `${slug(plan.name)}-${Math.random().toString(36).slice(2, 6)}`;
   return {
-    id: `${slug(plan.name)}-${Math.random().toString(36).slice(2, 6)}`,
+    id: flowId,
+    ownerId,
     name: plan.name,
     status: "Collecting",
     collected: 0,
     goal: plan.goal,
     contributors: 0,
-    payouts: plan.payouts.map((p) => ({
+    payouts: plan.payouts.map((p, i) => ({
+      // Stable per-payout id so recipient edits can't be misassigned by label.
+      id: `${flowId}-p${i}`,
       label: p.label,
       amount: p.amount,
       state: p.state,
@@ -60,22 +64,4 @@ export function toDashboardFlow(plan: FlowPlan): Flow {
     })),
     resources: plan.resources ?? [],
   };
-}
-
-/** Deterministic flow used when no LLM key is configured or a call fails. */
-export function mockFlow(prompt: string): Flow {
-  const m = prompt.match(/\$?\s*([\d,]+(?:\.\d{2})?)/);
-  const goal = m ? Number(m[1].replace(/,/g, "")) || 500 : 500;
-  const name = prompt.length > 44 ? `${prompt.slice(0, 44).trim()}…` : prompt || "New flow";
-  return toDashboardFlow({
-    name,
-    summary: `Collect $${goal} and split it across payouts as requested.`,
-    goal,
-    payouts: [
-      { label: "First payout", amount: Math.round(goal * 0.5), state: "pending", note: "Releases when half the goal is met" },
-      { label: "Second payout", amount: Math.round(goal * 0.3), state: "locked", note: "Held until the next milestone" },
-      { label: "Final payout", amount: Math.round(goal * 0.2), state: "locked", note: "Released on completion" },
-    ],
-    resources: [],
-  });
 }

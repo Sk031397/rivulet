@@ -45,6 +45,23 @@ interface CaptureResponse {
 const money = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/**
+ * Mask a payout recipient for the contributor-facing success screen so we
+ * don't leak the owner's full routing address. Emails become "d•••@domain",
+ * phones become "•••1234".
+ */
+const maskRecipient = (raw: string): string => {
+  const v = (raw ?? "").trim();
+  if (!v || v === "null") return "a recipient";
+  if (v.includes("@")) {
+    const [local, domain] = v.split("@");
+    const head = local.slice(0, 1);
+    return `${head}${"•".repeat(Math.max(1, Math.min(3, local.length - 1)))}@${domain}`;
+  }
+  const digits = v.replace(/\D/g, "");
+  return `•••${digits.slice(-4)}`;
+};
+
 export default function PayPage() {
   const params = useParams();
   const id = String(params?.id ?? "");
@@ -57,14 +74,14 @@ export default function PayPage() {
   const btnRef = useRef<HTMLDivElement>(null);
   const renderedRef = useRef(false);
 
-  /* Load the flow by id. */
+  /* Load the flow by id (public single-flow endpoint). */
   useEffect(() => {
     let alive = true;
-    fetch("/api/flows")
+    fetch(`/api/flows/${encodeURIComponent(id)}`)
       .then((r) => r.json())
-      .then((d: { flows?: Flow[] }) => {
+      .then((d: { flow?: Flow; error?: string }) => {
         if (!alive) return;
-        setFlow((d.flows ?? []).find((x) => x.id === id) ?? null);
+        setFlow(d.flow ?? null);
         setLoading(false);
       })
       .catch(() => {
@@ -217,7 +234,7 @@ export default function PayPage() {
                     >
                       <div className="min-w-0">
                         <p className="font-bold text-ink truncate">{r.label}</p>
-                        <p className="text-[11px] font-mono text-ink/55 truncate">{r.recipient}</p>
+                        <p className="text-[11px] font-mono text-ink/55 truncate">{maskRecipient(r.recipient)}</p>
                         {r.ok
                           ? <p className="text-xs text-emerald-700">{money(r.amount)} · {r.itemStatus ?? "sent"}</p>
                           : <p className="text-xs text-coral truncate">{r.error ?? "failed"}</p>
@@ -252,7 +269,7 @@ export default function PayPage() {
                 <span className="font-bold text-ink">Your contribution</span>
                 <span className="text-xl font-extrabold text-ink">{money(flow.goal)}</span>
               </div>
-              <p className="mt-1 text-xs text-ink/55">Funds the full goal via PayPal sandbox.</p>
+              <p className="mt-1 text-xs text-ink/55">Funds the full goal via PayPal.</p>
             </div>
             <div ref={btnRef} className="mt-4 min-h-[3.5rem]" />
             {capturing && <p className="mt-3 text-sm font-semibold text-ultra">Capturing payment…</p>}

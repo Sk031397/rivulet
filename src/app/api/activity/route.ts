@@ -1,10 +1,13 @@
+import { auth } from "@clerk/nextjs/server";
 import { listTransactions, transactionsToActivity } from "@/lib/paypal";
-import { MOCK_ACTIVITY } from "@/lib/mock";
 
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   const details = await listTransactions();
   if (details && details.length) {
     return Response.json({ items: transactionsToActivity(details), mode: "paypal" });
   }
-  return Response.json({ items: MOCK_ACTIVITY, mode: "mock" });
+  return Response.json({ items: [], mode: "empty" });
 }

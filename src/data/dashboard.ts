@@ -12,7 +12,9 @@ export interface User {
   initials: string;
 }
 
-export const USER: User = { name: "Maya", full: "Maya Ortiz", plan: "Free plan", initials: "MO" };
+// Placeholder identity shown until real auth is implemented.
+// Replace with your auth provider's session values.
+export const USER: User = { name: "You", full: "Your Account", plan: "Free plan", initials: "YA" };
 
 /* ─── Sidebar ───────────────────────────────────────────────────────── */
 export interface SidebarItem {
@@ -39,13 +41,6 @@ export interface Stat {
   note: string;
 }
 
-export const EMPTY_STATS: Stat[] = [
-  { label: "Available balance",    value: "$0.00", note: "No funds yet"          },
-  { label: "Collected this month", value: "$0",    note: "Start a flow to collect"},
-  { label: "Paid out",             value: "$0",    note: "No payouts yet"         },
-  { label: "Active flows",         value: "0",     note: "Create your first flow" },
-];
-
 /* ─── Prompt suggestions ────────────────────────────────────────────── */
 export const SUGGESTIONS: string[] = [
   "Split ticket sales 70/30 with my band",
@@ -57,6 +52,8 @@ export const SUGGESTIONS: string[] = [
 export type PayoutState = "paid" | "pending" | "locked";
 
 export interface Payout {
+  /** Stable identifier, unique within the flow. Preferred key for updates. */
+  id?: string;
   label: string;
   amount: number;
   state: PayoutState;
@@ -76,6 +73,8 @@ export type FlowStatus = "Collecting" | "Needs approval" | "Paid out";
 
 export interface Flow {
   id: string;
+  /** Clerk user id of the owner. Flows are scoped to their owner. */
+  ownerId?: string;
   name: string;
   status: FlowStatus;
   collected: number;

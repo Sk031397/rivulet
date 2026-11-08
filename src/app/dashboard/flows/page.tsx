@@ -17,6 +17,9 @@ import {
 } from "ag-grid-community";
 import PageHeader from "@/components/dashboard/PageHeader";
 import StatusPill from "@/components/dashboard/StatusPill";
+import RecipientAutocomplete from "@/components/dashboard/RecipientAutocomplete";
+import AutocompleteFloatingFilter from "@/components/dashboard/AutocompleteFloatingFilter";
+import { useAddressBook } from "@/lib/addressBook";
 import { type Flow, type FlowStatus, type PayoutState } from "@/data/dashboard";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
@@ -97,6 +100,50 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
   const [editingName, setEditingName] = useState(false);
   const [name, setName]               = useState(flow.name);
   const link = collectLink(flow.id);
+
+  // ── payout recipient editing ──────────────────────────────────────
+  const { contacts } = useAddressBook();
+  const [editingRecipients, setEditingRecipients] = useState(false);
+  // keyed by payout label → recipient string
+  const [recipients, setRecipients] = useState<Record<string, string>>({});
+  const [savingRecipients, setSavingRecipients] = useState(false);
+  const [recipientError, setRecipientError] = useState("");
+
+  const startEditingRecipients = () => {
+    const seed: Record<string, string> = {};
+    for (const p of flow.payouts) seed[p.id ?? p.label] = p.recipient ?? "";
+    setRecipients(seed);
+    setRecipientError("");
+    setEditingRecipients(true);
+  };
+
+  const saveRecipients = async () => {
+    if (savingRecipients) return;
+    setSavingRecipients(true);
+    setRecipientError("");
+    try {
+      const payload = flow.payouts.map((p) => ({
+        id: p.id,
+        label: p.label,
+        recipient: (recipients[p.id ?? p.label] ?? "").trim(),
+      }));
+      const res = await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payouts: payload }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not save recipients");
+      }
+      refreshFlows();
+      setEditingRecipients(false);
+    } catch (e) {
+      setRecipientError((e as Error).message);
+    } finally {
+      setSavingRecipients(false);
+    }
+  };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -198,11 +245,46 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
 
           {/* payouts */}
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50 mb-3">Payouts</p>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50">Payouts</p>
+              {editingRecipients ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveRecipients}
+                    disabled={savingRecipients}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-ultra px-3 py-1 text-xs font-bold text-white transition hover:bg-ink disabled:opacity-60"
+                  >
+                    {savingRecipients ? <><Loader2 className="size-3 animate-spin" /> Saving…</> : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingRecipients(false); setRecipientError(""); }}
+                    className="rounded-full px-2 py-1 text-xs font-bold text-ink/55 hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startEditingRecipients}
+                  className="rounded-full px-3 py-1 text-xs font-bold text-ultra transition hover:bg-ultra/10"
+                >
+                  Edit recipients
+                </button>
+              )}
+            </div>
+
+            {recipientError && (
+              <p className="mb-2 rounded-xl bg-coral/10 px-3 py-2 text-xs font-semibold text-coral">{recipientError}</p>
+            )}
+
             <ul className="space-y-2">
               {flow.payouts.map((p) => {
                 const s = STATE[p.state];
                 const Icon = s.icon;
+                const locked = p.state === "paid";
                 return (
                   <li key={p.label} className="flex items-start gap-3 rounded-2xl bg-paper p-4">
                     <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${s.icon_bg}`}>
@@ -215,10 +297,28 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
                       </div>
                       <p className="text-lg font-extrabold text-ink">{money(p.amount)}</p>
                       <p className="mt-0.5 text-xs leading-snug text-ink/60">{p.note}</p>
-                      {p.recipient && (
-                        <p className="mt-1.5 truncate rounded-lg bg-ultra/10 px-2 py-1 text-[11px] font-mono text-ultra">
-                          &#8594; {p.recipient}
-                        </p>
+
+                      {editingRecipients ? (
+                        <div className="mt-2">
+                          {locked ? (
+                            <p className="rounded-lg bg-ink/5 px-2 py-1 text-[11px] text-ink/50">
+                              Already paid — recipient locked
+                            </p>
+                          ) : (
+                            <RecipientAutocomplete
+                              value={recipients[p.id ?? p.label] ?? ""}
+                              onChange={(v) => setRecipients((r) => ({ ...r, [p.id ?? p.label]: v }))}
+                              contacts={contacts}
+                              placeholder="Email or phone number"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        p.recipient && (
+                          <p className="mt-1.5 truncate rounded-lg bg-ultra/10 px-2 py-1 text-[11px] font-mono text-ultra">
+                            &#8594; {p.recipient}
+                          </p>
+                        )
                       )}
                     </div>
                   </li>
@@ -370,6 +470,8 @@ export default function FlowsPage() {
       sortable: true,
       filter: "agTextColumnFilter",
       floatingFilter: true,
+      floatingFilterComponent: AutocompleteFloatingFilter,
+      floatingFilterComponentParams: { field: "name" },
       cellStyle: { fontWeight: 700 },
     },
     {
@@ -379,6 +481,8 @@ export default function FlowsPage() {
       sortable: true,
       filter: "agTextColumnFilter",
       floatingFilter: true,
+      floatingFilterComponent: AutocompleteFloatingFilter,
+      floatingFilterComponentParams: { field: "status" },
       cellRenderer: StatusCell,
     },
     {
@@ -387,6 +491,8 @@ export default function FlowsPage() {
       sortable: true,
       filter: "agNumberColumnFilter",
       floatingFilter: true,
+      floatingFilterComponent: AutocompleteFloatingFilter,
+      floatingFilterComponentParams: { field: "collected", numeric: true },
       valueGetter: (p) => p.data?.collected ?? 0,
       cellRenderer: CollectedCell,
       type: "rightAligned",
@@ -405,6 +511,8 @@ export default function FlowsPage() {
       sortable: true,
       filter: "agNumberColumnFilter",
       floatingFilter: true,
+      floatingFilterComponent: AutocompleteFloatingFilter,
+      floatingFilterComponentParams: { field: "contributors", numeric: true },
       type: "rightAligned",
     },
     {
@@ -502,7 +610,7 @@ export default function FlowsPage() {
                   theme={themeQuartz}
                   onGridReady={onGridReady}
                   onRowClicked={onRowClicked}
-                  rowSelection="single"
+                  rowSelection={{ mode: "singleRow" }}
                   animateRows={true}
                   rowHeight={52}
                   headerHeight={44}

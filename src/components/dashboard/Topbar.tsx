@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { Bell, Plus, Search, X, GitFork, Users, Check, Info, AlertCircle } from "lucide-react";
-import { USER } from "@/data/dashboard";
 import type { Flow } from "@/data/dashboard";
 
 /* ─── Notification types ─────────────────────────────────────────────── */
@@ -17,9 +17,7 @@ interface Notification {
 }
 
 const INITIAL_NOTIFICATIONS: Notification[] = [
-  { id: "n1", icon: "info",    title: "Welcome to Rivulet",        body: "Build your first flow with the prompt box below.", time: "Just now",     read: false },
-  { id: "n2", icon: "success", title: "PayPal connected",          body: "Your sandbox credentials are active.",             time: "1 min ago",    read: false },
-  { id: "n3", icon: "warning", title: "Configure AWS credentials", body: "Without them, flows are built in mock mode.", time: "1 min ago", read: false },
+  { id: "n1", icon: "info", title: "Welcome to Rivulet", body: "Build your first flow with the prompt box below.", time: "Just now", read: false },
 ];
 
 const NOTIF_ICON: Record<Notification["icon"], { el: typeof Info; bg: string; color: string }> = {
@@ -175,10 +173,13 @@ function SearchDropdown({
 /* ─── Topbar ─────────────────────────────────────────────────────────── */
 export default function Topbar() {
   const router = useRouter();
-  const [query, setQuery]         = useState("");
+  const { user } = useUser();
+  const userName = user?.firstName ?? user?.fullName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "there";
+
+  const [query, setQuery]           = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [results, setResults]     = useState<SearchResult[]>([]);
-  const [notifOpen, setNotifOpen] = useState(false);
+  const [results, setResults]       = useState<SearchResult[]>([]);
+  const [notifOpen, setNotifOpen]   = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -250,7 +251,7 @@ export default function Topbar() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-ink">{greeting}, {USER.name}</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink">{greeting}, {userName}</h1>
         <p className="mt-1 text-sm text-ink/65">Here&apos;s your dashboard overview.</p>
       </div>
 

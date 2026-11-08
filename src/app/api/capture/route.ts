@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { captureOrder, disburseFlowPayouts, type PayoutResult } from "@/lib/paypal";
-import { updateFlow, getAllFlows } from "@/lib/store";
+import { updateFlowUnscoped, getFlowByIdUnscoped } from "@/lib/store";
 
 /**
  * POST /api/capture
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Update collected + contributors first so we can read the new total.
-  let flow = updateFlow(flowId, (f) => {
+  // Unscoped: the caller is a contributor paying in, not the flow owner.
+  let flow = await updateFlowUnscoped(flowId, (f) => {
     f.collected = Number((f.collected + capture.amount).toFixed(2));
     f.contributors += 1;
   });
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Goal reached — auto-disburse to all payout recipients ────────────
-  const existing = getAllFlows().find((f) => f.id === flowId);
+  const existing = await getFlowByIdUnscoped(flowId);
 
   let disbursed: { results: PayoutResult[]; finalStatus: "Paid out" | "Needs approval" } = {
     results: [],
@@ -61,11 +62,13 @@ export async function POST(req: NextRequest) {
     disbursed = await disburseFlowPayouts(existing);
   }
 
-  flow = updateFlow(flowId, (f) => {
+  const paidLabels = new Set(disbursed.results.filter((r) => r.ok).map((r) => r.label));
+
+  flow = await updateFlowUnscoped(flowId, (f) => {
     f.status = disbursed.finalStatus;
-    if (disbursed.finalStatus === "Paid out") {
-      f.payouts = f.payouts.map((p) => ({ ...p, state: "paid" as const }));
-    }
+    f.payouts = f.payouts.map((p) =>
+      paidLabels.has(p.label) ? { ...p, state: "paid" as const } : p,
+    );
   });
 
   return Response.json({

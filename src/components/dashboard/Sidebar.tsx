@@ -3,12 +3,22 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { ArrowLeft, Settings, HelpCircle, LogOut, User, ChevronUp } from "lucide-react";
 import Mark from "@/components/Mark";
 import { BRAND } from "@/data/content";
-import { SIDEBAR, USER } from "@/data/dashboard";
+import { SIDEBAR } from "@/data/dashboard";
 
-function UserMenu({ onClose }: { onClose: () => void }) {
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function UserMenu({ name, email, onClose }: { name: string; email: string; onClose: () => void }) {
+  const { signOut } = useClerk();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,9 +30,9 @@ function UserMenu({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   const items = [
-    { icon: User, label: "View profile", href: "/dashboard/settings" },
-    { icon: Settings, label: "Settings", href: "/dashboard/settings" },
-    { icon: HelpCircle, label: "Help & support", href: "#" },
+    { icon: User,        label: "View profile", href: "/dashboard/settings" },
+    { icon: Settings,    label: "Settings",     href: "/dashboard/settings" },
+    { icon: HelpCircle,  label: "Help & support", href: "#" },
   ];
 
   return (
@@ -31,13 +41,13 @@ function UserMenu({ onClose }: { onClose: () => void }) {
       className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl bg-white shadow-2xl shadow-ink/30 ring-1 ring-ink/10"
     >
       {/* header */}
-      <div className="flex items-center gap-3 bg-paper px-4 py-3 border-b border-ink/5">
+      <div className="flex items-center gap-3 border-b border-ink/5 bg-paper px-4 py-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-saffron to-coral text-xs font-extrabold text-ink">
-          {USER.initials}
+          {initials(name)}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold text-ink">{USER.full}</p>
-          <p className="text-xs text-ink/55">{USER.plan}</p>
+          <p className="truncate text-sm font-extrabold text-ink">{name}</p>
+          <p className="truncate text-xs text-ink/55">{email}</p>
         </div>
       </div>
 
@@ -61,7 +71,7 @@ function UserMenu({ onClose }: { onClose: () => void }) {
       <div className="border-t border-ink/5 py-1">
         <button
           type="button"
-          onClick={() => { onClose(); alert("Sign-out would redirect to your auth provider."); }}
+          onClick={() => { onClose(); signOut({ redirectUrl: "/sign-in" }); }}
           className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-semibold text-coral transition hover:bg-coral/8"
         >
           <LogOut className="size-4" />
@@ -74,7 +84,12 @@ function UserMenu({ onClose }: { onClose: () => void }) {
 
 export default function Sidebar() {
   const pathname = usePathname() ?? "";
+  const { user } = useUser();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const userName  = user?.fullName ?? user?.firstName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "Account";
+  const userEmail = user?.emailAddresses[0]?.emailAddress ?? "";
+  const userInit  = initials(userName);
 
   return (
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-ink p-5 text-white lg:flex">
@@ -98,7 +113,9 @@ export default function Sidebar() {
               <Icon className={`size-5 ${active ? "text-saffron" : ""}`} />
               {label}
               {badge && (
-                <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[11px] font-bold text-white">{badge}</span>
+                <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[11px] font-bold text-white">
+                  {badge}
+                </span>
               )}
             </Link>
           );
@@ -109,9 +126,15 @@ export default function Sidebar() {
         <ArrowLeft className="size-4" /> Back to site
       </Link>
 
-      {/* user area — click opens dropdown */}
+      {/* user area */}
       <div className="relative">
-        {menuOpen && <UserMenu onClose={() => setMenuOpen(false)} />}
+        {menuOpen && (
+          <UserMenu
+            name={userName}
+            email={userEmail}
+            onClose={() => setMenuOpen(false)}
+          />
+        )}
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
@@ -120,11 +143,11 @@ export default function Sidebar() {
           className="flex w-full items-center gap-3 rounded-2xl bg-white/5 p-3 transition hover:bg-white/10"
         >
           <span className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-saffron to-coral text-sm font-extrabold text-ink">
-            {USER.initials}
+            {userInit}
           </span>
           <div className="min-w-0 flex-1 text-left">
-            <p className="truncate text-sm font-bold">{USER.full}</p>
-            <p className="text-xs text-white/60">{USER.plan}</p>
+            <p className="truncate text-sm font-bold">{userName}</p>
+            <p className="truncate text-xs text-white/60">{userEmail}</p>
           </div>
           <ChevronUp
             className={`size-4 shrink-0 text-white/40 transition-transform ${menuOpen ? "rotate-180" : ""}`}

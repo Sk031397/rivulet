@@ -466,7 +466,7 @@ export default function PaymentsPage() {
             paginationPageSize={pageSize}
             paginationPageSizeSelector={false}
             /* row selection */
-            rowSelection="single"
+            rowSelection={{ mode: "singleRow" }}
             /* quick filter */
             quickFilterText={quickFilter}
             /* misc */

@@ -2,7 +2,8 @@ import { generateText } from "ai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { NextRequest } from "next/server";
-import { FlowSchema, toDashboardFlow, mockFlow, type FlowPlan } from "@/lib/flow";
+import { auth } from "@clerk/nextjs/server";
+import { FlowSchema, toDashboardFlow, type FlowPlan } from "@/lib/flow";
 import { createOrderForAmount, hasPayPalCreds } from "@/lib/paypal";
 import { saveFlow } from "@/lib/store";
 
@@ -76,6 +77,9 @@ function retryAfterSeconds(err: unknown): number | null {
 
 /* ─── Route ──────────────────────────────────────────────────────────── */
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   let prompt = "";
   try {
     const body = (await req.json()) as { prompt?: unknown };
@@ -113,10 +117,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const flow = toDashboardFlow({ ...plan, resources });
+    const flow = toDashboardFlow({ ...plan, resources }, userId);
 
-    // Persist to file store so webhooks can find and update this flow
-    saveFlow(flow);
+    // Persist to the database so webhooks/captures can find and update this flow
+    await saveFlow(flow);
 
     return Response.json({
       flow,
@@ -137,11 +141,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Bedrock unavailable or parse error — fall back to a mock flow
-    // so the UI always works even without AWS credentials.
-    console.warn("[build-flow] falling back to mockFlow");
-    const flow = mockFlow(prompt);
-    saveFlow(flow);
-    return Response.json({ flow, mode: "mock" });
+    const message =
+      err instanceof Error ? err.message : "Flow generation failed. Check your AWS credentials and try again.";
+    return Response.json({ error: "build_failed", message }, { status: 500 });
   }
 }

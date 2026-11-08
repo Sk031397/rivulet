@@ -262,7 +262,7 @@ export default function PeoplePage() {
         const tones = ["from-ultra to-coral", "from-mint to-ultra", "from-coral to-saffron", "from-ink to-ultra", "from-saffron to-coral"];
 
         d.flows.forEach((flow, fi) => {
-          // Payout recipients
+          // Payout recipients — real emails from the flow store
           flow.payouts.forEach((p, pi) => {
             if (!p.recipient) return;
             const key = p.recipient;
@@ -284,22 +284,6 @@ export default function PeoplePage() {
               });
             }
           });
-
-          // Estimate contributors (no emails available, show placeholder rows)
-          for (let i = 0; i < Math.min(flow.contributors, 3); i++) {
-            const key = `contributor-${flow.id}-${i}`;
-            const perContrib = flow.contributors > 0 ? Number((flow.payouts.reduce((s, p) => s + p.amount, 0) / flow.contributors).toFixed(2)) : 0;
-            map.set(key, {
-              name: `Contributor ${i + 1}`,
-              initials: `C${i + 1}`,
-              role: "Contributor",
-              flows: [flow.name],
-              contributed: perContrib,
-              received: 0,
-              since: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-              tone: tones[(fi + i + 1) % tones.length],
-            });
-          }
         });
 
         setPeople(Array.from(map.values()));
@@ -461,7 +445,7 @@ export default function PeoplePage() {
                   theme={themeQuartz}
                   onGridReady={onGridReady}
                   onRowClicked={onRowClicked}
-                  rowSelection="single"
+                  rowSelection={{ mode: "singleRow" }}
                   animateRows={true}
                   rowHeight={56}
                   headerHeight={44}

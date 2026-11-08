@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { sendInviteEmail } from "@/lib/email";
 
 /**
@@ -7,6 +8,9 @@ import { sendInviteEmail } from "@/lib/email";
  * Sends a branded invite email to the address typed in the Invite modal (People page).
  */
 export async function POST(req: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   let body: { email?: unknown };
   try {
     body = await req.json();

@@ -7,5 +7,180 @@
   --color-saffron: #ffc247;
   --color-mint: #2ee6a6;
   --color-paper: #f6f4ff;
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Expressive display face for headings — set via the `font-display` class. */
+.font-display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* ─── Entrance animations ──────────────────────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes draw-line {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position: 200% center; }
+}
+
+@keyframes connector-pop {
+  0%   { opacity: 0; transform: scale(0.5) translateY(0); }
+  60%  { opacity: 1; transform: scale(1.15) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) rotate(-6deg); }
+  50%      { transform: translateY(-8px) rotate(-6deg); }
+}
+
+@keyframes blob-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(18px, -14px) scale(1.04); }
+  66%      { transform: translate(-14px, 12px) scale(0.98); }
+}
+
+/* ─── "Flowing machine" animations ─────────────────────────────────────── */
+/* Dashed connector lines that look like current moving through wires. */
+@keyframes flow-dash {
+  to { stroke-dashoffset: -32; }
+}
+
+/* A soft pulse used on the prompt row while the flow "processes". */
+@keyframes flow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(61, 61, 245, 0.0); }
+  50%      { box-shadow: 0 0 0 6px rgba(61, 61, 245, 0.12); }
+}
+
+/* A particle that travels down a connector path. */
+@keyframes flow-particle {
+  0%   { offset-distance: 0%;   opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+/* Gentle bob for the floating status chips on the mock. */
+@keyframes chip-bob {
+  0%, 100% { transform: translateY(0) rotate(var(--chip-rot, 0deg)); }
+  50%      { transform: translateY(-6px) rotate(var(--chip-rot, 0deg)); }
+}
+
+/* ─── Animation utility classes ───────────────────────────────────────── */
+.animate-fade-up {
+  animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-connector-pop {
+  animation: connector-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float-slow 7s ease-in-out infinite;
+}
+
+.animate-blob {
+  animation: blob-drift 16s ease-in-out infinite;
+}
+
+.animate-flow-dash {
+  stroke-dasharray: 8 8;
+  animation: flow-dash 1s linear infinite;
+}
+
+.animate-flow-pulse {
+  animation: flow-pulse 2.4s ease-in-out infinite;
+}
+
+.animate-chip-bob {
+  animation: chip-bob 4s ease-in-out infinite;
+}
+
+/* Gradient text that shimmers across itself */
+.text-shimmer {
+  background: linear-gradient(90deg, var(--color-ultra), var(--color-coral), var(--color-ultra));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 4s linear infinite;
+}
+
+/* Stagger helpers — apply delay via inline style or these classes */
+.delay-75  { animation-delay: 75ms; }
+.delay-150 { animation-delay: 150ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-700 { animation-delay: 700ms; }
+.delay-800 { animation-delay: 800ms; }
+
+/* ─── Skeleton shimmer ─────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #ede9fe 25%,
+    #f6f4ff 50%,
+    #ede9fe 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+/* ─── Focus-visible ring ───────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid #3d3df5;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ─── Respect reduced-motion preferences ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

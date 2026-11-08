@@ -1,18 +1,23 @@
+import { auth } from "@clerk/nextjs/server";
 import { listTransactions, transactionsToStats } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
-import { MOCK_STATS } from "@/lib/mock";
+
+const usd = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export async function GET() {
-  // Always read live flow data from the store
-  const flows = getAllFlows();
+  const { userId } = await auth();
+  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+
+  // Live flow data for this user
+  const flows = await getAllFlows(userId);
   const activeFlows = flows.filter((f) => f.status !== "Paid out");
   const needsApproval = flows.filter((f) => f.status === "Needs approval").length;
-  const totalCollected = flows.reduce((sum, f) => sum + f.collected, 0);
-  const totalPaidOut = flows
+  const flowCollected = flows.reduce((sum, f) => sum + f.collected, 0);
+  const flowPaidOut = flows
     .filter((f) => f.status === "Paid out")
     .reduce((sum, f) => sum + f.goal, 0);
 
-  // Active flows note
   const activeNote =
     needsApproval > 0
       ? `${needsApproval} need${needsApproval === 1 ? "s" : ""} your approval`
@@ -20,67 +25,57 @@ export async function GET() {
         ? "No active flows"
         : `${activeFlows.filter((f) => f.status === "Collecting").length} collecting`;
 
-  // Try to enrich balance + collected/paidOut with real PayPal transaction data
+  // Choose ONE coherent source for the money figures so balance stays consistent:
+  // prefer real PayPal activity when present, otherwise the flow store.
   const details = await listTransactions();
-  if (details && details.length) {
-    const { collected: ppCollected, paidOut: ppPaidOut, count } = transactionsToStats(details);
+  const hasPayPal = Boolean(details && details.length);
 
-    // Prefer PayPal data for the money figures; use flow store for active flows count
-    const collected = Math.max(ppCollected, totalCollected);
-    const paidOut = Math.max(ppPaidOut, totalPaidOut);
-    const balance = Math.max(0, collected - paidOut);
+  let collected: number;
+  let paidOut: number;
+  let collectedNote: string;
+  let paidOutNote: string;
+  let mode: "paypal" | "flows" | "empty";
 
-    const stats = [
-      {
-        label: "Available balance",
-        value: `$${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: totalCollected > 0 ? `$${totalCollected.toFixed(2)} collected across flows` : `${count} transactions`,
-      },
-      {
-        label: "Collected this month",
-        value: `$${collected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: `${count} transaction${count === 1 ? "" : "s"} via PayPal`,
-      },
-      {
-        label: "Paid out",
-        value: `$${paidOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: paidOut > 0 ? "from real PayPal activity" : "No payouts yet",
-      },
-      {
-        label: "Active flows",
-        value: String(activeFlows.length),
-        note: activeNote,
-      },
-    ];
-    return Response.json({ stats, mode: "paypal" });
+  if (hasPayPal) {
+    const pp = transactionsToStats(details!);
+    collected = pp.collected;
+    paidOut = pp.paidOut;
+    collectedNote = `${pp.count} transaction${pp.count === 1 ? "" : "s"} via PayPal`;
+    paidOutNote = paidOut > 0 ? "from real PayPal activity" : "No payouts yet";
+    mode = "paypal";
+  } else if (flows.length > 0) {
+    collected = flowCollected;
+    paidOut = flowPaidOut;
+    const contributors = flows.reduce((s, f) => s + f.contributors, 0);
+    collectedNote = `${contributors} contributor${contributors === 1 ? "" : "s"} across all flows`;
+    const paidFlows = flows.filter((f) => f.status === "Paid out").length;
+    paidOutNote = paidOut > 0 ? `${paidFlows} flow${paidFlows === 1 ? "" : "s"} completed` : "No payouts yet";
+    mode = "flows";
+  } else {
+    return Response.json({
+      stats: [
+        { label: "Available balance",    value: "$0.00", note: "No transactions yet"      },
+        { label: "Collected this month", value: "$0.00", note: "Create a flow to collect" },
+        { label: "Paid out",             value: "$0.00", note: "No payouts yet"            },
+        { label: "Active flows",         value: "0",     note: "Create your first flow"    },
+      ],
+      mode: "empty",
+    });
   }
 
-  // No PayPal transactions — derive everything from the flow store only
-  if (flows.length > 0) {
-    const stats = [
-      {
-        label: "Available balance",
-        value: `$${Math.max(0, totalCollected - totalPaidOut).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: totalCollected > 0 ? `$${totalCollected.toFixed(2)} collected across flows` : "No funds yet",
-      },
-      {
-        label: "Collected this month",
-        value: `$${totalCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: `${flows.reduce((s, f) => s + f.contributors, 0)} contributor${flows.reduce((s, f) => s + f.contributors, 0) === 1 ? "" : "s"} across all flows`,
-      },
-      {
-        label: "Paid out",
-        value: `$${totalPaidOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-        note: totalPaidOut > 0 ? `${flows.filter((f) => f.status === "Paid out").length} flow${flows.filter((f) => f.status === "Paid out").length === 1 ? "" : "s"} completed` : "No payouts yet",
-      },
-      {
-        label: "Active flows",
-        value: String(activeFlows.length),
-        note: activeNote,
-      },
-    ];
-    return Response.json({ stats, mode: "flows" });
-  }
+  const balance = Math.max(0, collected - paidOut);
 
-  return Response.json({ stats: MOCK_STATS, mode: "mock" });
+  const stats = [
+    {
+      label: "Available balance",
+      value: usd(balance),
+      // Describe the balance using the SAME source that produced it.
+      note: `${usd(collected)} in · ${usd(paidOut)} out`,
+    },
+    { label: "Collected this month", value: usd(collected), note: collectedNote },
+    { label: "Paid out",             value: usd(paidOut),   note: paidOutNote },
+    { label: "Active flows",         value: String(activeFlows.length), note: activeNote },
+  ];
+
+  return Response.json({ stats, mode });
 }

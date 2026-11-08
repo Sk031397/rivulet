@@ -262,20 +262,41 @@ export async function disburseFlowPayouts(
   flow: { name: string; payouts: Array<{ label: string; amount: number; state: string; recipient?: string }> },
 ): Promise<{ results: PayoutResult[]; finalStatus: "Paid out" | "Needs approval" }> {
   const results: PayoutResult[] = [];
+  const isProduction = process.env.PAYPAL_ENVIRONMENT === "PRODUCTION";
 
-  for (const p of flow.payouts) {
-    if (!p.recipient || !p.recipient.includes("@") || p.state === "paid") continue;
+  // Payouts eligible for disbursement: have a recipient and aren't already paid.
+  const eligible = flow.payouts.filter((p) => p.recipient && p.state !== "paid");
+
+  for (const p of eligible) {
+    const recipient = p.recipient!.trim();
+    const isEmail = recipient.includes("@");
+    const recipientType: "EMAIL" | "PHONE" = isEmail ? "EMAIL" : "PHONE";
+
+    // The PayPal sandbox cannot pay out to a phone number — fail honestly
+    // instead of silently skipping (which previously left the payout unpaid
+    // while the flow was marked "Paid out").
+    if (recipientType === "PHONE" && !isProduction) {
+      results.push({
+        label: p.label,
+        recipient,
+        amount: p.amount,
+        ok: false,
+        error:
+          "Phone-number payouts aren't supported in the PayPal sandbox — use an email recipient, or run in production.",
+      });
+      continue;
+    }
 
     const result = await createPayout({
-      recipient: p.recipient,
-      recipientType: "EMAIL",
+      recipient,
+      recipientType,
       amount: p.amount,
       note: `${flow.name} — ${p.label}`,
     });
 
     results.push({
       label: p.label,
-      recipient: p.recipient,
+      recipient,
       amount: p.amount,
       ok: result.ok,
       batchId: result.batchId,
@@ -284,10 +305,12 @@ export async function disburseFlowPayouts(
     });
   }
 
-  const anySuccess = results.length === 0 || results.some((r) => r.ok);
+  // "Paid out" only when every eligible payout actually succeeded AND there was
+  // at least one. Otherwise the flow still needs attention.
+  const allSucceeded = results.length > 0 && results.every((r) => r.ok);
   return {
     results,
-    finalStatus: anySuccess ? "Paid out" : "Needs approval",
+    finalStatus: allSucceeded ? "Paid out" : "Needs approval",
   };
 }
 

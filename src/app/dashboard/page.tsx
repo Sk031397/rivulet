@@ -4,16 +4,18 @@ import { useEffect, useState, useCallback } from "react";
 import Topbar from "@/components/dashboard/Topbar";
 import PromptBox from "@/components/dashboard/PromptBox";
 import StatCards from "@/components/dashboard/StatCards";
+import AnalyticsPanel from "@/components/dashboard/AnalyticsPanel";
 import FlowList from "@/components/dashboard/FlowList";
 import FlowDetail from "@/components/dashboard/FlowDetail";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
-import { EMPTY_STATS, type Flow, type ActivityItem, type Stat } from "@/data/dashboard";
+import { type Flow, type ActivityItem, type Stat } from "@/data/dashboard";
 
 export default function OverviewPage() {
   const [flows, setFlows]           = useState<Flow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activity, setActivity]     = useState<ActivityItem[]>([]);
-  const [stats, setStats]           = useState<Stat[]>(EMPTY_STATS);
+  const [stats, setStats]           = useState<Stat[]>([]);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const selected = flows.find((f) => f.id === selectedId) ?? flows[0] ?? null;
 
@@ -34,8 +36,11 @@ export default function OverviewPage() {
   const refreshStats = useCallback(() => {
     fetch("/api/stats")
       .then((r) => r.json())
-      .then((d: { stats?: Stat[] }) => { if (d.stats) setStats(d.stats); })
-      .catch(() => {});
+      .then((d: { stats?: Stat[] }) => {
+        if (d.stats) setStats(d.stats);
+        setStatsLoading(false);
+      })
+      .catch(() => { setStatsLoading(false); });
   }, []);
 
   // Load flows + activity + stats on mount
@@ -77,7 +82,7 @@ export default function OverviewPage() {
     <>
       <Topbar />
       <PromptBox onBuild={handleBuild} />
-      <StatCards stats={stats} />
+      <StatCards stats={stats} loading={statsLoading} />
 
       {flows.length === 0 ? (
         <div className="rounded-3xl bg-white p-12 text-center ring-1 ring-ink/5">
@@ -87,23 +92,26 @@ export default function OverviewPage() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <FlowList flows={flows} selectedId={selectedId ?? ""} onSelect={setSelectedId} />
-          <div className="space-y-6">
-            {selected && (
-              <FlowDetail
-                flow={selected}
-                onRename={(id, newName) => {
-                  setFlows((prev) => prev.map((f) => f.id === id ? { ...f, name: newName } : f));
-                }}
-                onDelete={(id) => {
-                  setFlows((prev) => prev.filter((f) => f.id !== id));
-                  setSelectedId((cur) => (cur === id ? null : cur));
-                  refreshStats();
-                }}
-              />
-            )}
-            {activity.length > 0 && <ActivityFeed items={activity} />}
+        <div className="space-y-6">
+          <AnalyticsPanel />
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <FlowList flows={flows} selectedId={selectedId ?? ""} onSelect={setSelectedId} />
+            <div className="space-y-6">
+              {selected && (
+                <FlowDetail
+                  flow={selected}
+                  onRename={(id, newName) => {
+                    setFlows((prev) => prev.map((f) => f.id === id ? { ...f, name: newName } : f));
+                  }}
+                  onDelete={(id) => {
+                    setFlows((prev) => prev.filter((f) => f.id !== id));
+                    setSelectedId((cur) => (cur === id ? null : cur));
+                    refreshStats();
+                  }}
+                />
+              )}
+              {activity.length > 0 && <ActivityFeed items={activity} />}
+            </div>
           </div>
         </div>
       )}

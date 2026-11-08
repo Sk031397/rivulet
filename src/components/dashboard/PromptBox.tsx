@@ -8,7 +8,7 @@ interface BuildResponse {
   flow?: Flow;
   error?: string;
   message?: string;
-  mode?: "paypal" | "ai";
+  mode?: "paypal";
   retryAfter?: number;
 }
 
@@ -75,11 +75,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       if (!data.flow) throw new Error(data.error ?? "No flow returned");
 
       onBuild?.(data.flow);
-      setMode(
-        data.mode === "paypal"
-          ? "✓ Built with AI · live PayPal resources created"
-          : "✓ Built with AI",
-      );
+      setMode("✓ Flow built · live PayPal order created");
     } catch (e) {
       setError((e as Error).message ?? "Something went wrong");
     } finally {

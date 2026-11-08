@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import { listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import type { Payment } from "@/data/dashboard";
@@ -12,6 +13,9 @@ import type { Payment } from "@/data/dashboard";
  * Falls back to flow-store-only when PayPal credentials are absent.
  */
 export async function GET() {
+  const { userId } = await auth();
+  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+
   const payments: Payment[] = [];
 
   // ── Source 1: PayPal transaction history ────────────────────────────
@@ -47,7 +51,7 @@ export async function GET() {
   }
 
   // ── Source 2: Flow store ─────────────────────────────────────────────
-  const flows = getAllFlows();
+  const flows = await getAllFlows(userId);
 
   for (const flow of flows) {
     // Every flow with collected > 0 represents contributor payments in

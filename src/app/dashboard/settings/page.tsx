@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   Plus, CreditCard, Trash2, X, Check, Eye, EyeOff,
   Camera, Shield, AlertTriangle, Smartphone, KeyRound,
 } from "lucide-react";
 import PageHeader from "@/components/dashboard/PageHeader";
-import { USER } from "@/data/dashboard";
 
 /* ─── types ────────────────────────────────────────────────────────── */
 interface Notifications {
@@ -17,11 +17,6 @@ interface Notifications {
 }
 
 interface Method { kind: string; detail: string; tone: string; id: string }
-
-const INITIAL_METHODS: Method[] = [
-  { id: "m1", kind: "PayPal",  detail: "maya@rivulet.app", tone: "from-ultra to-coral" },
-  { id: "m2", kind: "Bank",    detail: "Chase ••4821",     tone: "from-mint to-ultra"  },
-];
 
 /* ─── tiny helpers ──────────────────────────────────────────────────── */
 function Toggle({
@@ -49,6 +44,20 @@ function Toggle({
 function ModalShell({
   title, subtitle, onClose, children,
 }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    // Remember what had focus so we can restore it when the modal closes.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      previouslyFocused?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
@@ -78,6 +87,7 @@ function PasswordModal({ onClose }: { onClose: () => void }) {
   const [confirm, setConfirm] = useState("");
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNext, setShowNext]       = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr]   = useState("");
 
@@ -106,8 +116,8 @@ function PasswordModal({ onClose }: { onClose: () => void }) {
         {[
           { label: "Current password", val: current, set: setCurrent, show: showCurrent, toggle: () => setShowCurrent(v => !v) },
           { label: "New password",     val: next,    set: setNext,    show: showNext,    toggle: () => setShowNext(v => !v)    },
-          { label: "Confirm new password", val: confirm, set: setConfirm, show: showNext, toggle: () => {} },
-        ].map(({ label, val, set, show, toggle }, i) => (
+          { label: "Confirm new password", val: confirm, set: setConfirm, show: showConfirm, toggle: () => setShowConfirm(v => !v) },
+        ].map(({ label, val, set, show, toggle }) => (
           <label key={label} className="block">
             <span className="text-sm font-bold text-ink">{label}</span>
             <div className="relative mt-1.5">
@@ -118,12 +128,11 @@ function PasswordModal({ onClose }: { onClose: () => void }) {
                 required
                 className="w-full rounded-2xl bg-paper px-4 py-3 pr-11 text-ink outline-none ring-1 ring-ink/10 focus:ring-2 focus:ring-ultra"
               />
-              {i < 2 && (
-                <button type="button" onClick={toggle} tabIndex={-1}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink/40 hover:text-ink">
-                  {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              )}
+              <button type="button" onClick={toggle} tabIndex={-1}
+                aria-label={show ? "Hide password" : "Show password"}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink/40 hover:text-ink">
+                {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
             </div>
           </label>
         ))}
@@ -364,15 +373,42 @@ function SaveToast({ onDone }: { onDone: () => void }) {
 
 /* ─── main page ─────────────────────────────────────────────────────── */
 export default function SettingsPage() {
+  const { user, isLoaded } = useUser();
+  const clerkFullName    = user?.fullName    ?? "";
+  const clerkFirstName   = user?.firstName   ?? "";
+  const clerkLastName    = user?.lastName    ?? "";
+  const clerkEmail       = user?.emailAddresses[0]?.emailAddress ?? "";
+  const clerkInitials    = (clerkFullName || clerkFirstName || "?")
+    .split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  const clerkAvatarUrl   = user?.imageUrl ?? null;
+
   /* profile */
   const fileRef = useRef<HTMLInputElement>(null);
-  const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
-  const [fullName,    setFullName]    = useState(USER.full);
-  const [displayName, setDisplayName] = useState(USER.name);
-  const [email,       setEmail]       = useState("maya@rivulet.app");
-  const [phone,       setPhone]       = useState("");
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(clerkAvatarUrl);
+  const [firstName, setFirstName] = useState(clerkFirstName);
+  const [lastName,  setLastName]  = useState(clerkLastName);
+  const [email,     setEmail]     = useState(clerkEmail);
+  const [phone,     setPhone]     = useState("");
   /* saved copies for cancel */
-  const [saved, setSaved] = useState({ fullName: USER.full, displayName: USER.name, email: "maya@rivulet.app", phone: "" });
+  const [saved, setSaved] = useState({ firstName: clerkFirstName, lastName: clerkLastName, email: clerkEmail, phone: "" });
+  /* save state */
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  // Clerk's user loads asynchronously — seed the form once it's available.
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    const fn = user.firstName ?? "";
+    const ln = user.lastName ?? "";
+    const em = user.emailAddresses[0]?.emailAddress ?? "";
+    const ph = user.primaryPhoneNumber?.phoneNumber ?? "";
+    setFirstName(fn);
+    setLastName(ln);
+    setEmail(em);
+    setPhone(ph);
+    setSaved({ firstName: fn, lastName: ln, email: em, phone: ph });
+    setAvatarSrc(user.imageUrl ?? null);
+  }, [isLoaded, user]);
 
   /* notifications */
   const [notifications, setNotifications] = useState<Notifications>({
@@ -380,7 +416,7 @@ export default function SettingsPage() {
   });
 
   /* payment methods */
-  const [methods, setMethods] = useState<Method[]>(INITIAL_METHODS);
+  const [methods, setMethods] = useState<Method[]>([]);
 
   /* modals */
   const [modal, setModal] = useState<"password" | "2fa" | "addMethod" | "delete" | null>(null);
@@ -395,15 +431,31 @@ export default function SettingsPage() {
     setAvatarSrc(url);
   };
 
-  const handleSave = () => {
-    setSaved({ fullName, displayName, email, phone });
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+  const handleSave = async () => {
+    if (savingProfile) return;
+    setSavingProfile(true);
+    setProfileError("");
+    try {
+      // Clerk supports updating name directly. Email/phone changes require
+      // separate verification flows, so they're display-only here.
+      await user?.update({ firstName: firstName.trim(), lastName: lastName.trim() });
+      setSaved({ firstName, lastName, email, phone });
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (e) {
+      const msg =
+        (e as { errors?: Array<{ message?: string }> })?.errors?.[0]?.message ??
+        (e as Error)?.message ??
+        "Could not save your changes.";
+      setProfileError(msg);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const handleCancel = () => {
-    setFullName(saved.fullName);
-    setDisplayName(saved.displayName);
+    setFirstName(saved.firstName);
+    setLastName(saved.lastName);
     setEmail(saved.email);
     setPhone(saved.phone);
   };
@@ -437,7 +489,7 @@ export default function SettingsPage() {
                   <img src={avatarSrc} alt="Profile" className="size-16 rounded-2xl object-cover" />
                 ) : (
                   <span className="grid size-16 place-items-center rounded-2xl bg-gradient-to-br from-saffron to-coral text-xl font-extrabold text-ink">
-                    {USER.initials}
+                    {clerkInitials}
                   </span>
                 )}
                 <span className="absolute inset-0 grid place-items-center rounded-2xl bg-ink/50 opacity-0 transition group-hover:opacity-100">
@@ -461,8 +513,8 @@ export default function SettingsPage() {
             </div>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               {[
-                { label: "Full name",     value: fullName,     set: setFullName     },
-                { label: "Display name",  value: displayName,  set: setDisplayName  },
+                { label: "First name",    value: firstName,    set: setFirstName    },
+                { label: "Last name",     value: lastName,     set: setLastName     },
                 { label: "Email",         value: email,        set: setEmail        },
                 { label: "Phone",         value: phone,        set: setPhone        },
               ].map(({ label, value, set }) => (
@@ -561,7 +613,7 @@ export default function SettingsPage() {
               <li className="flex items-center justify-between rounded-2xl bg-paper p-4 ring-1 ring-ink/5">
                 <div>
                   <p className="text-sm font-bold text-ink">Password</p>
-                  <p className="text-xs text-ink/55">Last changed 3 months ago</p>
+                  <p className="text-xs text-ink/55">Update your password anytime</p>
                 </div>
                 <button
                   type="button"
@@ -588,21 +640,30 @@ export default function SettingsPage() {
           </section>
 
           {/* save / cancel */}
-          <div className="flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-ink ring-1 ring-ink/10 transition hover:ring-ink"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="rounded-full bg-ink px-6 py-2.5 text-sm font-bold text-white transition hover:bg-ultra"
-            >
-              Save changes
-            </button>
+          <div className="flex flex-col items-end gap-2">
+            {profileError && (
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
+                <AlertTriangle className="size-3.5 shrink-0" /> {profileError}
+              </p>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={savingProfile}
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-ink ring-1 ring-ink/10 transition hover:ring-ink disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={savingProfile}
+                className="rounded-full bg-ink px-6 py-2.5 text-sm font-bold text-white transition hover:bg-ultra disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {savingProfile ? "Saving…" : "Save changes"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
