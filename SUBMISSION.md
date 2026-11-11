@@ -102,6 +102,6 @@ Payments are mostly about trust and edge cases, not API calls. The interesting w
 - A release condition like "after the event" holds a flow for the organizer's approval; it is not verified automatically. A release *date* is paid automatically.
 - Reminder emails need an email provider to be configured; otherwise the organizer copies the message into the group chat.
 - Money in other currencies is correct on each flow and its pay page, but the overview, ledger and activity feed total US-dollar activity only. Non-USD flows have not been paid end to end in the sandbox, and whether a sandbox account accepts a currency depends on its settings.
-- Invoice reading takes images (PNG, JPEG, WebP), not PDFs, and always shows the organizer what it read before anything is built.
+- Invoice reading takes images (PNG, JPEG, WebP) and PDFs, and always shows the organizer what it read before anything is built.
 - The daily job (deadline refunds and scheduled payouts) is deployed but has not yet been observed running. The routines it calls are the same ones the owner's buttons use, and the refund routine was tested with a real sandbox payment.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.

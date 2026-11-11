@@ -70,11 +70,11 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
     setMode("");
     setInvoiceNote("");
     if (!(INVOICE_TYPES as readonly string[]).includes(file.type)) {
-      setError("Attach a PNG, JPEG or WebP image of the invoice.");
+      setError("Attach a PNG, JPEG, WebP or PDF of the invoice.");
       return;
     }
     if (file.size > MAX_INVOICE_BYTES) {
-      setError("That image is too large. Keep it under 2.5 MB.");
+      setError("That file is too large. Keep it under 2.5 MB.");
       return;
     }
     setReading(true);
@@ -210,9 +210,9 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,application/pdf"
           className="sr-only"
-          aria-label="Attach an invoice image"
+          aria-label="Attach an invoice"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void readInvoiceFile(f); }}
         />
         <button
@@ -223,7 +223,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         >
           {reading ? <><Loader2 className="size-3.5 animate-spin" /> Reading invoice…</> : <><Paperclip className="size-3.5" /> Attach an invoice</>}
         </button>
-        <span className="text-xs text-ink/45">PNG, JPEG or WebP. We read the payee and amount; you check it before building.</span>
+        <span className="text-xs text-ink/45">PNG, JPEG, WebP or PDF. We read the payee and amount; you check it before building.</span>
       </div>
 
       {/* What the agent did, step by step */}

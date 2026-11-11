@@ -5,7 +5,7 @@ import { INVOICE_TYPES, MAX_INVOICE_BYTES, invoicePrompt, readInvoice } from "@/
 
 /**
  * POST /api/read-invoice
- * Body: { image: <base64, no data: prefix>, mediaType: "image/png" | "image/jpeg" | "image/webp" }
+ * Body: { image: <base64, no data: prefix>, mediaType: "image/png" | "image/jpeg" | "image/webp" | "application/pdf" }
  *
  * Signed-in only. Reads a booking confirmation or invoice and returns the plain
  * fields it found plus a one-line prompt for the organizer to review and edit.
@@ -24,21 +24,21 @@ export async function POST(req: NextRequest) {
 
   const mediaType = INVOICE_TYPES.find((t) => t === body.mediaType);
   if (!mediaType) {
-    return Response.json({ error: "Upload a PNG, JPEG or WebP image of the invoice." }, { status: 400 });
+    return Response.json({ error: "Upload a PNG, JPEG, WebP or PDF of the invoice." }, { status: 400 });
   }
   if (typeof body.image !== "string" || body.image.length === 0) {
     return Response.json({ error: "image is required" }, { status: 400 });
   }
   const bytes = Buffer.from(body.image, "base64");
   if (bytes.length === 0 || bytes.length > MAX_INVOICE_BYTES) {
-    return Response.json({ error: "That image is too large. Keep it under 2.5 MB." }, { status: 413 });
+    return Response.json({ error: "That file is too large. Keep it under 2.5 MB." }, { status: 413 });
   }
 
   try {
     const invoice = await readInvoice(makeBedrock()(MODEL_ID), new Uint8Array(bytes), mediaType);
     if (!invoice) {
       return Response.json(
-        { error: "I couldn't read a payee or an amount from that image. Try a clearer photo, or type it in." },
+        { error: "I couldn't read a payee or an amount from that file. Try a clearer photo, or type it in." },
         { status: 422 },
       );
     }
