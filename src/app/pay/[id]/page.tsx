@@ -239,9 +239,11 @@ export default function PayPage() {
         <p className="text-xs font-bold uppercase tracking-widest text-ultra">Rivulet</p>
         <h1 className="mt-1 text-3xl font-extrabold text-ink">{flow.name}</h1>
         <p className="mt-2 text-ink/65">
-          {flow.share
-            ? `Your share is ${money(flow.share)} — split ${flow.participants} ways, securely with PayPal.`
-            : "Chip in any amount, securely with PayPal."}
+          {refunded
+            ? "This trip was cancelled."
+            : flow.share
+              ? `Your share is ${money(flow.share)} — split ${flow.participants} ways, securely with PayPal.`
+              : "Chip in any amount, securely with PayPal."}
         </p>
         {flow.deadline && !refunded && (
           <p className="mt-2 inline-block rounded-full bg-saffron/25 px-3 py-1 text-xs font-bold text-amber-900">
@@ -275,11 +277,17 @@ export default function PayPage() {
           />
         </div>
         <p className="mt-1 text-xs text-ink/50">
-          {pct}% funded · {flow.contributors} {flow.contributors === 1 ? "payment" : "payments"}
-          {flow.share && flow.participants
-            ? ` · ${Math.min(flow.participants, Math.floor((flow.collected + 0.005) / flow.share))} of ${flow.participants} shares covered`
-            : ""}
-          {!funded && !refunded && ` · ${money(remaining)} to go`}
+          {refunded ? (
+            "Everyone was refunded"
+          ) : (
+            <>
+              {pct}% funded · {flow.contributors} {flow.contributors === 1 ? "payment" : "payments"}
+              {flow.share && flow.participants
+                ? ` · ${Math.min(flow.participants, Math.floor((flow.collected + 0.005) / flow.share))} of ${flow.participants} shares covered`
+                : ""}
+              {!funded && ` · ${money(remaining)} to go`}
+            </>
+          )}
         </p>
       </div>
 

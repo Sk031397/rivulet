@@ -60,6 +60,8 @@ export async function refundFlow(flowId: string): Promise<RefundOutcome> {
       (f.contributions ?? []).filter((c) => !c.refundedAt).reduce((s, c) => s + c.amount, 0).toFixed(2),
     );
     if (refundable(f).length === 0) f.status = "Refunded";
+    // The count of people currently in: refunded payments no longer count.
+    f.contributors = refundable(f).length;
     f.disbursingAt = undefined;
   });
 
