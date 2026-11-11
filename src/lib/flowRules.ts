@@ -456,3 +456,23 @@ export function deadlineFromPrompt(prompt: string): string | null {
   if (!m) return null;
   return datesInText(m[1])[0] ?? null;
 }
+
+/* ─── currency the user wrote ────────────────────────────────────────── */
+
+export type FlowCurrency = "USD" | "EUR" | "GBP" | "CAD" | "AUD";
+
+/**
+ * The currency a request is written in: "EUR" for "€1,800" or "1800 euros", and
+ * so on. Null when nothing is named (the flow is then USD). "MIXED" if it names
+ * more than one non-dollar currency. Read in code, not left to the model.
+ */
+export function currencyFromPrompt(prompt: string): FlowCurrency | "MIXED" | null {
+  const found = new Set<FlowCurrency>();
+  if (/€|\beur\b|\beuros?\b/i.test(prompt)) found.add("EUR");
+  if (/£|\bgbp\b|\bpounds?\b|\bsterling\b/i.test(prompt)) found.add("GBP");
+  if (/\bcad\b|\bc\$|\bca\$|\bcanadian\s+dollars?\b/i.test(prompt)) found.add("CAD");
+  if (/\baud\b|\ba\$|\bau\$|\baustralian\s+dollars?\b/i.test(prompt)) found.add("AUD");
+  if (found.size > 1) return "MIXED";
+  if (found.size === 1) return [...found][0];
+  return null;
+}

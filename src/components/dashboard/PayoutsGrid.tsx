@@ -28,6 +28,7 @@ import { Check, Clock, Loader2, Lock, Pencil, Redo2, Undo2 } from "lucide-react"
 import { useAddressBook } from "@/lib/addressBook";
 import { rivuletTheme } from "@/lib/gridTheme";
 import { checkRecipient, isBlankRecipient, type Contact } from "@/lib/flowRules";
+import { formatMoney } from "@/lib/contribution";
 import type { Payout, PayoutState } from "@/data/dashboard";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
@@ -64,7 +65,6 @@ const toRow = (p: Payout): PayoutRow => ({
   recipient: p.recipient,
 });
 
-const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const baselineOf = (payouts: Payout[]) => new Map(payouts.map((p) => [p.id ?? p.label, p.recipient ?? ""]));
 
 /* ── cell renderers ──────────────────────────────────────────────────── */
@@ -102,10 +102,12 @@ function PayoutCell({ data }: { data?: PayoutRow }) {
   );
 }
 
-function AmountCell({ value }: { value?: number }) {
+function AmountCell({ value, context }: { value?: number; context?: { currency?: string } }) {
   // Flex-centred: AG Grid's cell line-height would otherwise pin inline text to the top of a tall row.
   return (
-    <span className="flex h-full items-center justify-end font-extrabold tabular-nums text-ink">{money(value ?? 0)}</span>
+    <span className="flex h-full items-center justify-end font-extrabold tabular-nums text-ink">
+      {formatMoney(value ?? 0, context?.currency)}
+    </span>
   );
 }
 
@@ -180,11 +182,14 @@ function RecipientEditor({ value, onValueChange, eventKey, contacts }: Recipient
 export default function PayoutsGrid({
   flowId,
   payouts,
+  currency,
   refreshFlows,
   editGuard,
 }: {
   flowId: string;
   payouts: Payout[];
+  /** ISO 4217 code the amounts are in (defaults to USD). */
+  currency?: string;
   refreshFlows: () => void;
   editGuard: MutableRefObject<EditGuard>;
 }) {
@@ -399,6 +404,7 @@ export default function PayoutsGrid({
       <div className="overflow-hidden rounded-2xl ring-1 ring-ink/5" data-testid="payouts-grid">
         <AgGridReact<PayoutRow>
           key={gridKey}
+          context={{ currency }}
           rowData={rows}
           columnDefs={columnDefs}
           defaultColDef={defaultColDef}

@@ -9,10 +9,13 @@ import {
   canRefund,
   cleanMemberName,
   daysLeft,
+  currencyOf,
   deadlineEnd,
+  formatMoney,
   hasPendingCondition,
   isPastDeadline,
   payoutDue,
+  planResplit,
   paymentIssues,
   recomputeTotals,
   recordContribution,
@@ -261,4 +264,99 @@ test("payments PayPal flagged are listed for the owner", () => {
     ],
   });
   assert.deepEqual(paymentIssues(f).map((c) => c.id), ["B"]);
+});
+
+/* ─── someone drops out ─────────────────────────────────────────────── */
+
+const group = (over: Partial<Flow> = {}): Flow =>
+  flow({
+    goal: 1200,
+    participants: 4,
+    roster: ["Me", "Sam", "Priya", "Jo"].map((name, i) => ({ id: `m${i}`, name })),
+    payouts: [
+      { id: "p0", label: "Villa", amount: 800, state: "pending", note: "" },
+      { id: "p1", label: "Flights", amount: 400, state: "pending", note: "" },
+    ],
+    ...over,
+  });
+
+const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x * 100, 0)) / 100;
+
+test("if others cover it, the cost is unchanged and the share rises", () => {
+  const plan = planResplit(group(), 1, "keep");
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(plan.goal, 1200);
+    assert.equal(plan.participants, 3);
+    assert.equal(plan.share, 400);
+    assert.deepEqual(plan.payouts, [800, 400]);
+  }
+});
+
+test("if the cost drops with them, the goal and payouts scale down together", () => {
+  const plan = planResplit(group(), 1, "shrink");
+  assert.ok(plan.ok);
+  if (plan.ok) {
+    assert.equal(plan.goal, 900);
+    assert.equal(plan.share, 300);
+    assert.equal(sum(plan.payouts), 900, "payouts still add up to the goal exactly");
+    assert.deepEqual(plan.payouts, [600, 300]);
+  }
+});
+
+test("scaled payouts always add up to the new goal to the cent", () => {
+  const f = group({
+    goal: 1000,
+    participants: 3,
+    roster: ["A", "B", "C"].map((name, i) => ({ id: `m${i}`, name })),
+    payouts: [
+      { id: "p0", label: "X", amount: 333.33, state: "pending", note: "" },
+      { id: "p1", label: "Y", amount: 333.33, state: "pending", note: "" },
+      { id: "p2", label: "Z", amount: 333.34, state: "pending", note: "" },
+    ],
+  });
+  const plan = planResplit(f, 1, "shrink");
+  assert.ok(plan.ok);
+  if (plan.ok) assert.equal(sum(plan.payouts), plan.goal);
+});
+
+test("a group can't be re-split down to fewer than two people", () => {
+  assert.equal(planResplit(group(), 3, "keep").ok, false);
+  assert.equal(planResplit(group(), 0, "keep").ok, false);
+  assert.equal(planResplit(flow(), 1, "keep").ok, false, "a flow with no group");
+});
+
+test("amounts can't be scaled once a payout has been sent", () => {
+  const f = group();
+  f.payouts[0].state = "paid";
+  assert.equal(planResplit(f, 1, "shrink").ok, false);
+  assert.equal(planResplit(f, 1, "keep").ok, true, "keeping the cost doesn't touch amounts");
+});
+
+test("the cost can't drop below what people have already paid", () => {
+  const f = group({ contributions: [{ id: "A", amount: 1000, at: "x" }] });
+  assert.equal(planResplit(f, 1, "shrink").ok, false);
+});
+
+/* ─── currency ──────────────────────────────────────────────────────── */
+
+test("older flows with no currency are USD", () => {
+  assert.equal(currencyOf({}), "USD");
+  assert.equal(currencyOf({ currency: "EUR" }), "EUR");
+  assert.equal(currencyOf({ currency: "XYZ" }), "USD", "an unknown code never reaches PayPal");
+});
+
+test("amounts are formatted in the flow's currency, the same way everywhere", () => {
+  assert.equal(formatMoney(1600, "USD"), "$1,600.00");
+  assert.equal(formatMoney(1600, "EUR"), "€1,600.00");
+  assert.equal(formatMoney(1600, "GBP"), "£1,600.00");
+  assert.equal(formatMoney(1600, "USD", "auto"), "$1,600");
+  assert.equal(formatMoney(12.5, "USD", "auto"), "$12.50");
+  assert.equal(formatMoney(5), "$5.00", "defaults to USD");
+});
+
+test("contribution errors name the right currency", () => {
+  const r = validateContribution({ goal: 100, collected: 90, status: "Collecting", currency: "EUR" }, 50);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.error, /€10\.00/);
 });

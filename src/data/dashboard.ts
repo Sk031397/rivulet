@@ -118,6 +118,8 @@ export interface Flow {
   status: FlowStatus;
   collected: number;
   goal: number;
+  /** ISO 4217 code every amount on this flow is in. Absent on older flows, which are USD. */
+  currency?: "USD" | "EUR" | "GBP" | "CAD" | "AUD";
   contributors: number;
   /** Group size for a trip-style flow: each person's share is goal / participants. */
   participants?: number;

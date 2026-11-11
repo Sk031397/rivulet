@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
-import { listTransactions } from "@/lib/paypal";
+import { isUsdTransaction, listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
+import { currencyOf } from "@/lib/contribution";
 import type { Payment } from "@/data/dashboard";
 
 const fmtDate = (d: Date) =>
@@ -22,18 +23,22 @@ export async function GET() {
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const payments: Payment[] = [];
-  const flows = await getAllFlows(userId);
+  // The ledger totals amounts, so it lists US-dollar activity; flows in other
+  // currencies are shown on their own flow, not mixed in here.
+  const allFlows = await getAllFlows(userId);
+  const flows = allFlows.filter((f) => currencyOf(f) === "USD");
 
-  // Capture ids we already represent from the flow store.
+  // Capture ids we already represent from the flow store (any currency, so a
+  // PayPal transaction for a non-USD flow is never shown as a stray row).
   const knownCaptureIds = new Set<string>();
-  for (const flow of flows) {
+  for (const flow of allFlows) {
     for (const c of flow.contributions ?? []) knownCaptureIds.add(c.id);
   }
 
   // ── Source 1: PayPal transaction history ────────────────────────────
   const details = await listTransactions();
   if (details && details.length > 0) {
-    for (const t of details) {
+    for (const t of details.filter(isUsdTransaction)) {
       const info = t.transaction_info ?? {};
       const amt = Math.abs(Number(info.transaction_amount?.value ?? 0));
       if (!amt) continue;

@@ -3,7 +3,7 @@ import { captureOrder, getOrder, type PayoutResult } from "@/lib/paypal";
 import { updateFlowUnscoped, getFlowByIdUnscoped } from "@/lib/store";
 import { disburseAndRecord } from "@/lib/release";
 import { toPublicFlow, maskRecipient } from "@/lib/publicFlow";
-import { isPastDeadline, recordContribution, remainingFor } from "@/lib/contribution";
+import { currencyOf, isPastDeadline, recordContribution, remainingFor } from "@/lib/contribution";
 
 /**
  * POST /api/capture
@@ -48,6 +48,10 @@ export async function POST(req: NextRequest) {
   }
   if (order.customId !== flowId) {
     return Response.json({ error: "This payment does not belong to this flow." }, { status: 400 });
+  }
+  // The order must be in the flow's own currency, or its amount means something else.
+  if (order.currency && order.currency !== currencyOf(flow)) {
+    return Response.json({ error: "This payment is in the wrong currency for this flow. You have not been charged." }, { status: 400 });
   }
 
   let captureId: string | undefined;

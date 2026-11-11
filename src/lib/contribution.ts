@@ -5,8 +5,34 @@
 
 import type { Flow } from "@/data/dashboard";
 
-/** Smallest contribution accepted, in USD. */
+/** Smallest contribution accepted, in the flow's currency. */
 export const MIN_CONTRIBUTION = 1;
+
+/* ─── Currency ───────────────────────────────────────────────────────── */
+
+export const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+
+/** The currency a flow is in. Flows created before currencies existed are USD. */
+export function currencyOf(flow: { currency?: string }): Currency {
+  return (CURRENCIES as readonly string[]).includes(flow.currency ?? "") ? (flow.currency as Currency) : "USD";
+}
+
+/**
+ * Format an amount in a currency, the same way on the server and the browser
+ * (a fixed locale, so pages don't mismatch when they hydrate). "auto" drops the
+ * cents on whole amounts; "fixed" always shows two decimals.
+ */
+export function formatMoney(n: number, currency: string = "USD", digits: "auto" | "fixed" = "fixed"): string {
+  const code = (CURRENCIES as readonly string[]).includes(currency) ? currency : "USD";
+  const whole = digits === "auto" && Math.round(n * 100) % 100 === 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: code,
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
 
 /**
  * A payout run is "in flight" if one started recently. Runs older than this are
@@ -173,7 +199,7 @@ export function remainingFor(flow: { goal: number; collected: number }): number 
  * to cents, or an error message the caller can show to the contributor.
  */
 export function validateContribution(
-  flow: { goal: number; collected: number; status: string; deadline?: string },
+  flow: { goal: number; collected: number; status: string; deadline?: string; currency?: string },
   requested: number,
 ): { ok: true; amount: number } | { ok: false; error: string } {
   if (flow.status !== "Collecting") {
@@ -192,10 +218,10 @@ export function validateContribution(
   const amount = toCents(requested) / 100;
   // Allow a final contribution below the minimum if it's exactly what's left.
   if (amount < MIN_CONTRIBUTION && amount !== remaining) {
-    return { ok: false, error: `The minimum contribution is $${MIN_CONTRIBUTION.toFixed(2)}.` };
+    return { ok: false, error: `The minimum contribution is ${formatMoney(MIN_CONTRIBUTION, flow.currency)}.` };
   }
   if (amount > remaining) {
-    return { ok: false, error: `Only $${remaining.toFixed(2)} is still needed — enter that or less.` };
+    return { ok: false, error: `Only ${formatMoney(remaining, flow.currency)} is still needed — enter that or less.` };
   }
   return { ok: true, amount };
 }
@@ -250,8 +276,88 @@ export function cleanMemberName(raw: unknown): string | null {
 }
 
 /** The nudge the organizer can paste into the group chat (or that is emailed). */
-export function reminderText(opts: { flowName: string; name: string; owed: number; link: string; deadline?: string }): string {
-  const amount = `$${opts.owed.toFixed(2)}`;
+export function reminderText(opts: { flowName: string; name: string; owed: number; link: string; deadline?: string; currency?: string }): string {
+  const amount = formatMoney(opts.owed, opts.currency);
   const due = opts.deadline ? ` by ${opts.deadline}` : "";
   return `Hi ${opts.name}, your ${amount} share for ${opts.flowName} is still open. Please pay${due}: ${opts.link}`;
+}
+
+/* ─── Someone drops out ──────────────────────────────────────────────── */
+
+export type ResplitMode = "keep" | "shrink";
+
+export type ResplitPlan =
+  | { ok: true; participants: number; goal: number; share: number; payouts: number[] }
+  | { ok: false; error: string };
+
+/** Scale cent amounts to a new total, keeping their proportions and summing exactly. */
+function scaleCents(amounts: number[], targetCents: number): number[] {
+  const total = amounts.reduce((s, a) => s + a, 0);
+  if (total <= 0) return amounts;
+  const exact = amounts.map((a) => (a * targetCents) / total);
+  const floors = exact.map(Math.floor);
+  let left = targetCents - floors.reduce((s, a) => s + a, 0);
+  // Hand the leftover cents to the largest fractional parts.
+  const order = exact.map((e, i) => ({ i, frac: e - Math.floor(e) })).sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    floors[i] += 1;
+    left -= 1;
+  }
+  return floors;
+}
+
+/**
+ * What happens to the numbers if `removed` people leave a group flow.
+ *
+ *  - "keep":   the cost stays the same, so each remaining person's share rises.
+ *  - "shrink": the cost falls with them (per-person costs like flights), so the
+ *              goal and every payout are scaled down in proportion.
+ *
+ * Pure, so the owner's screen can preview it and the server can apply it using
+ * the same code. Refuses anything that would leave people overpaid or touch a
+ * payout that has already been sent.
+ */
+export function planResplit(
+  flow: Pick<Flow, "goal" | "participants" | "roster" | "payouts" | "contributions">,
+  removed: number,
+  mode: ResplitMode,
+): ResplitPlan {
+  const oldN = flow.roster?.length ?? flow.participants ?? 0;
+  const newN = oldN - removed;
+  if (!Number.isInteger(oldN) || oldN < 2) return { ok: false, error: "This flow has no group to re-split." };
+  if (removed < 1) return { ok: false, error: "Nobody is being removed." };
+  if (newN < 2) return { ok: false, error: "A group needs at least two people." };
+
+  const amounts = flow.payouts.map((p) => toCents(p.amount));
+  const goalCents = toCents(flow.goal);
+
+  if (mode === "keep") {
+    return {
+      ok: true,
+      participants: newN,
+      goal: flow.goal,
+      share: Math.ceil(goalCents / newN) / 100,
+      payouts: amounts.map((a) => a / 100),
+    };
+  }
+
+  if (flow.payouts.some((p) => p.state === "paid")) {
+    return { ok: false, error: "Some payouts were already sent, so the amounts can't be scaled down." };
+  }
+  const newGoalCents = Math.round((goalCents * newN) / oldN);
+  const liveCents = refundable(flow).reduce((s, c) => s + toCents(c.amount), 0);
+  if (liveCents > newGoalCents) {
+    return {
+      ok: false,
+      error: "People have already paid more than the new total would be. Refund someone first, or keep the cost the same.",
+    };
+  }
+  return {
+    ok: true,
+    participants: newN,
+    goal: newGoalCents / 100,
+    share: Math.ceil(newGoalCents / newN) / 100,
+    payouts: scaleCents(amounts, newGoalCents).map((a) => a / 100),
+  };
 }

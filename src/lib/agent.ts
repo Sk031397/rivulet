@@ -18,12 +18,13 @@ import { generateText, stepCountIs, tool, type LanguageModel, type ModelMessage 
 import { z } from "zod";
 import type { Flow } from "@/data/dashboard";
 import { FlowSchema, toDashboardFlow } from "./flow";
-import { MAX_ROSTER, cleanMemberName, deadlineEnd } from "./contribution";
+import { MAX_ROSTER, cleanMemberName, deadlineEnd, formatMoney } from "./contribution";
 import type { RosterMember } from "@/data/dashboard";
 import {
   checkRecipient,
   cleanModelReply,
   conditionRequested,
+  currencyFromPrompt,
   dateGrounded,
   dateWarnings,
   datesInText,
@@ -35,6 +36,7 @@ import {
   unsupportedRequestWarnings,
   validateDraft,
   type Contact,
+  type FlowCurrency,
 } from "./flowRules";
 
 export interface AgentStep {
@@ -54,7 +56,7 @@ Work through it like this:
 5. When create_flow succeeds, reply with one short sentence summarizing the flow. Do not call any more tools.
 
 Rules:
-- Amounts are US dollars. If the user says "split" without proportions, split evenly.
+- Amounts are in the currency the user wrote: US dollars unless they use € / euros, £ / pounds, C$ / Canadian dollars or A$ / Australian dollars, in which case set currency to that one. A flow has exactly one currency. If "split" without proportions, split evenly.
 - Never change a dollar amount the user stated for a payout. If the payout amounts the user gave do not add up to the total they asked to collect, make the goal equal to the sum of the payouts, and say so in your final reply.
 - If the user gives no total but gives per-person amounts, the goal is their sum.
 - If the user gives no breakdown, make one payout for the whole goal rather than inventing a split.
@@ -106,6 +108,10 @@ const createFlowInput = z.object({
     .number()
     .optional()
     .describe("How many people are splitting the cost, including the organizer. ONLY if the user stated a group size."),
+  currency: z
+    .enum(["USD", "EUR", "GBP", "CAD", "AUD"])
+    .optional()
+    .describe("ONLY if the user wrote amounts in euros (€), pounds (£), Canadian or Australian dollars. Omit for US dollars."),
   members: z
     .array(z.string())
     .optional()
@@ -277,6 +283,19 @@ export async function runFlowAgent(opts: {
             participants = names.length;
           }
         }
+        // A payout labelled with a group member's name is the model paying the
+        // contributors instead of the payee ("Me", "Sam"...). Payouts go to whoever
+        // is owed the money, never to the people paying in.
+        if (roster) {
+          const memberNames = new Set(roster.map((m) => m.name.toLowerCase()));
+          const paidMembers = draft.payouts.filter((p) => memberNames.has(p.label.trim().toLowerCase()));
+          if (paidMembers.length) {
+            groupErrors.push(
+              `payouts ${paidMembers.map((p) => `"${p.label}"`).join(", ")} are named after people in the group. Payouts are for whoever RECEIVES the money (the villa host, the airline, the restaurant) — not the people paying in. Make one payout for the payee the user named, for the full amount.`,
+            );
+          }
+        }
+
         // Dates and conditions must come from the user, not the model. A deadline
         // refunds people automatically and a release date pays automatically, so a
         // made-up one is not acceptable.
@@ -296,6 +315,20 @@ export async function runFlowAgent(opts: {
               `payout "${p.label}": releaseOn ${p.releaseOn} does not come from the user's request. Only use a date the user gave; otherwise omit releaseOn.${knownHint}`,
             );
           }
+        }
+
+        // Currency comes from what the user wrote. The model may not choose one for them.
+        const writtenIn = currencyFromPrompt(opts.prompt);
+        let currency: FlowCurrency | undefined;
+        if (writtenIn === "MIXED") {
+          groupErrors.push("the request mixes more than one currency. A flow has exactly one currency; ask the user to pick one.");
+        } else if (writtenIn) {
+          if (input.currency && input.currency !== writtenIn) {
+            groupErrors.push(`the request is written in ${writtenIn}, but currency is ${input.currency}. Use ${writtenIn}.`);
+          }
+          currency = writtenIn;
+        } else if (input.currency && input.currency !== "USD") {
+          groupErrors.push(`currency ${input.currency} does not come from the user's request, which names no currency. Omit currency.`);
         }
 
         // Group size stated in the request is applied in code if the model skipped it.
@@ -342,6 +375,7 @@ export async function runFlowAgent(opts: {
         proposed = toDashboardFlow(plan, opts.ownerId);
         if (participants) proposed.participants = participants;
         if (roster) proposed.roster = roster;
+        if (currency && currency !== "USD") proposed.currency = currency;
         if (deadline) proposed.deadline = deadline;
         lastProblem = null;
         warnings.push(...result.warnings);
@@ -349,8 +383,8 @@ export async function runFlowAgent(opts: {
         steps.push({
           tool: "create_flow",
           ok: true,
-          summary: `Designed “${draft.name}” — $${draft.goal.toFixed(2)} across ${draft.payouts.length} payout${draft.payouts.length === 1 ? "" : "s"}${
-            participants ? `, split ${participants} ways ($${(Math.ceil((draft.goal * 100) / participants) / 100).toFixed(2)} each)` : ""
+          summary: `Designed “${draft.name}” — ${formatMoney(draft.goal, currency)} across ${draft.payouts.length} payout${draft.payouts.length === 1 ? "" : "s"}${
+            participants ? `, split ${participants} ways (${formatMoney(Math.ceil((draft.goal * 100) / participants) / 100, currency)} each)` : ""
           }${deadline ? `, due ${deadline}` : ""}`,
         });
         return {

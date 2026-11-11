@@ -7,7 +7,7 @@
  */
 
 import type { Flow, FlowStatus, PayoutState } from "@/data/dashboard";
-import { rosterStatus, shareFor, type MemberState } from "./contribution";
+import { currencyOf, rosterStatus, shareFor, type MemberState } from "./contribution";
 
 export interface PublicFlow {
   id: string;
@@ -16,7 +16,8 @@ export interface PublicFlow {
   collected: number;
   goal: number;
   contributors: number;
-  /** Group size, when the flow is split between a fixed number of people. */
+  /** ISO 4217 code every amount on the page is in. */
+  currency: string;
   participants?: number;
   /** One person's share in USD (goal / participants), when participants is set. */
   share?: number;
@@ -37,6 +38,7 @@ export function toPublicFlow(flow: Flow): PublicFlow {
     collected: flow.collected,
     goal: flow.goal,
     contributors: flow.contributors,
+    currency: currencyOf(flow),
     ...(flow.participants ? { participants: flow.participants } : {}),
     ...(share !== null ? { share } : {}),
     ...(flow.deadline ? { deadline: flow.deadline } : {}),

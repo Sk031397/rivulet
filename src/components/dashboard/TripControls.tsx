@@ -9,13 +9,11 @@
 import { useState } from "react";
 import { AlertTriangle, Bell, CalendarClock, Copy, Loader2, Undo2, UserPlus, Users, X } from "lucide-react";
 import type { Flow } from "@/data/dashboard";
-import { canRefund, daysLeft, isPastDeadline, paymentIssues, refundable, remainingFor, rosterStatus, shareFor } from "@/lib/contribution";
-
-const money = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+import { canRefund, daysLeft, formatMoney, isPastDeadline, paymentIssues, planResplit, refundable, remainingFor, rosterStatus, shareFor, type ResplitMode } from "@/lib/contribution";
 
 /** Group size, per-person share, shares covered, and the deadline. Renders nothing for plain flows. */
 export function TripFacts({ flow }: { flow: Flow }) {
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
   const share = shareFor(flow);
   if (share === null && !flow.deadline) return null;
 
@@ -54,6 +52,7 @@ export function TripFacts({ flow }: { flow: Flow }) {
 
 /** Problems PayPal reported: payouts that failed, and payments that were disputed or reversed. */
 export function PayoutIssues({ flow }: { flow: Flow }) {
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
   const issues = flow.payouts.filter((p) => p.issue);
   const paymentProblems = paymentIssues(flow);
   if (issues.length === 0 && paymentProblems.length === 0) return null;
@@ -88,6 +87,7 @@ interface RefundResponse {
 
 /** "Refund everyone" with an explicit confirmation. Hidden when a refund isn't possible. */
 export function RefundControl({ flow, onDone }: { flow: Flow; onDone: () => void }) {
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -173,12 +173,15 @@ const CHIP: Record<"paid" | "partial" | "unpaid", string> = {
  * add/remove form, and reminders. Status comes from the real contributions.
  */
 export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => void }) {
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
 
   const status = rosterStatus(flow);
   const collecting = flow.status === "Collecting";
@@ -188,14 +191,14 @@ export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => vo
   const link = typeof window !== "undefined" ? `${window.location.origin}/pay/${encodeURIComponent(flow.id)}` : "";
   const owing = status.filter((s) => s.state !== "paid" && s.outstanding > 0);
 
-  const save = async (roster: Array<{ id?: string; name: string; email?: string }>) => {
+  const save = async (roster: Array<{ id?: string; name: string; email?: string }>, resplit?: ResplitMode) => {
     setBusy(true);
     setMessage("");
     try {
       const res = await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roster }),
+        body: JSON.stringify({ roster, ...(resplit ? { resplit } : {}) }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -227,6 +230,31 @@ export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => vo
 
   const remove = (id: string) => save(current().filter((m) => m.id !== id));
 
+  /** Remove someone and apply the chosen re-split, then offer a message for the group. */
+  const dropOut = async (id: string, mode: ResplitMode) => {
+    const who = status.find((s) => s.id === id)?.name ?? "Someone";
+    const plan = planResplit(flow, 1, mode);
+    if (!plan.ok) {
+      setIsError(true);
+      setMessage(plan.error);
+      return;
+    }
+    if (await save(current().filter((m) => m.id !== id), mode)) {
+      setLeaving(null);
+      setNotice(
+        mode === "shrink"
+          ? `${who} can't make it. The total is now ${money(plan.goal)}, so each share is ${money(plan.share)}. Pay here: ${link}`
+          : `${who} can't make it. The cost stays at ${money(plan.goal)}, so each share is now ${money(plan.share)}. Pay here: ${link}`,
+      );
+    }
+  };
+
+  const copyNotice = async () => {
+    await navigator.clipboard.writeText(notice);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const remind = async () => {
     setBusy(true);
     setMessage("");
@@ -257,7 +285,7 @@ export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => vo
   };
 
   const copy = async () => {
-    const who = owing.map((s) => `${s.name} ($${s.outstanding.toFixed(2)})`).join(", ");
+    const who = owing.map((s) => `${s.name} (${formatMoney(s.outstanding, flow.currency)})`).join(", ");
     const due = flow.deadline ? ` by ${flow.deadline}` : "";
     const text = `${flow.name}: still waiting on ${who}. Please pay your share${due}: ${link}`;
     await navigator.clipboard.writeText(text);
@@ -294,7 +322,7 @@ export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => vo
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => remove(s.id)}
+                      onClick={() => (status.length > 2 ? setLeaving(s.id) : remove(s.id))}
                       aria-label={`Remove ${s.name}`}
                       className="grid size-6 place-items-center rounded-full text-ink/40 hover:bg-coral/10 hover:text-coral disabled:opacity-50"
                     >
@@ -310,6 +338,59 @@ export function RosterPanel({ flow, onChange }: { flow: Flow; onChange: () => vo
         <p className="mt-2 text-sm text-ink/60">
           Add the people in your group to see who has paid. They&apos;ll pick their name on the pay page.
         </p>
+      )}
+
+      {leaving && (() => {
+        const who = status.find((s) => s.id === leaving)?.name ?? "this person";
+        const keepPlan = planResplit(flow, 1, "keep");
+        const shrinkPlan = planResplit(flow, 1, "shrink");
+        return (
+          <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-coral/30" role="group" aria-label={`${who} can't make it`}>
+            <p className="text-sm font-extrabold text-ink">{who} can&apos;t make it. What happens to the cost?</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={busy || !keepPlan.ok}
+                onClick={() => dropOut(leaving, "keep")}
+                className="rounded-xl bg-paper p-3 text-left ring-1 ring-ink/10 transition hover:ring-ultra disabled:opacity-50"
+              >
+                <span className="block text-sm font-bold text-ink">Others cover it</span>
+                <span className="mt-0.5 block text-xs text-ink/65">
+                  {keepPlan.ok ? `Total stays ${money(keepPlan.goal)}. Each share becomes ${money(keepPlan.share)}.` : keepPlan.error}
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={busy || !shrinkPlan.ok}
+                onClick={() => dropOut(leaving, "shrink")}
+                className="rounded-xl bg-paper p-3 text-left ring-1 ring-ink/10 transition hover:ring-ultra disabled:opacity-50"
+              >
+                <span className="block text-sm font-bold text-ink">Cost drops with them</span>
+                <span className="mt-0.5 block text-xs text-ink/65">
+                  {shrinkPlan.ok
+                    ? `Total falls to ${money(shrinkPlan.goal)}, payouts scaled to match. Share stays ${money(shrinkPlan.share)}.`
+                    : shrinkPlan.error}
+                </span>
+              </button>
+            </div>
+            <button type="button" onClick={() => setLeaving(null)} className="mt-2 text-xs font-bold text-ink/50 hover:text-ink">
+              Cancel
+            </button>
+          </div>
+        );
+      })()}
+
+      {notice && (
+        <div className="mt-3 rounded-xl bg-mint/20 p-3">
+          <p className="text-xs font-semibold text-emerald-800">{notice}</p>
+          <button
+            type="button"
+            onClick={copyNotice}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-ink ring-1 ring-ink/15 hover:ring-ink"
+          >
+            <Copy className="size-3.5" /> {copied ? "Copied!" : "Copy message for the group chat"}
+          </button>
+        </div>
       )}
 
       {collecting && (

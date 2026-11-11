@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createOrderForAmount, hasPayPalCreds } from "@/lib/paypal";
 import { getFlowByIdUnscoped } from "@/lib/store";
-import { validateContribution } from "@/lib/contribution";
+import { currencyOf, validateContribution } from "@/lib/contribution";
 
 /**
  * POST /api/orders
@@ -43,7 +43,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "That person isn't on this flow's list." }, { status: 400 });
   }
 
-  const order = await createOrderForAmount(check.amount, `${flow.name} — contribution`, flow.id, memberId);
+  const order = await createOrderForAmount(
+    check.amount,
+    `${flow.name} — contribution`,
+    flow.id,
+    memberId,
+    currencyOf(flow),
+  );
   if (!order.ok || !order.orderId) {
     return Response.json({ error: "Could not start the PayPal payment. Please try again." }, { status: 502 });
   }

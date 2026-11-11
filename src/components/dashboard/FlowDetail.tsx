@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import StatusPill from "./StatusPill";
 import { TripFacts, PayoutIssues } from "./TripControls";
 import type { Flow, PayoutState } from "@/data/dashboard";
+import { formatMoney } from "@/lib/contribution";
 
 const STATE: Record<PayoutState, { icon: LucideIcon; label: string; chip: string; icon_bg: string }> = {
   paid: { icon: Check, label: "Paid", chip: "bg-mint/25 text-emerald-800", icon_bg: "bg-mint text-ink" },
@@ -172,7 +173,7 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${s.chip}`}>{s.label}</span>
               </div>
               <p className="mt-3 text-sm font-bold text-ink">{p.label}</p>
-              <p className="text-xl font-extrabold text-ink">${p.amount}</p>
+              <p className="text-xl font-extrabold text-ink">{formatMoney(p.amount, flow.currency, "auto")}</p>
               <p className="mt-1 text-xs leading-snug text-ink/65">{p.note}</p>
               {p.condition && p.state !== "paid" && (
                 <p className="mt-2 rounded-lg bg-saffron/25 px-2 py-1 text-[11px] font-semibold text-amber-900">
@@ -314,7 +315,7 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
                 <div className="min-w-0">
                   <p className="font-bold text-ink truncate">{r.label} · <span className="font-mono text-xs">{r.recipient}</span></p>
                   {r.ok
-                    ? <p className="text-xs text-emerald-700">Sent ${r.amount.toFixed(2)} · batch {r.batchId ?? "—"} · {r.itemStatus ?? "—"}</p>
+                    ? <p className="text-xs text-emerald-700">Sent {formatMoney(r.amount, flow.currency)} · batch {r.batchId ?? "—"} · {r.itemStatus ?? "—"}</p>
                     : <p className="text-xs text-coral truncate">Failed: {r.error ?? "unknown error"}</p>
                   }
                 </div>

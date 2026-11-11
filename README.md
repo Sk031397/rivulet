@@ -77,6 +77,12 @@ Trip cancelled or deadline missed → refund every payment (owner button or dail
 
 **Roster.** If you name the people ("me, Sam, Priya and Jo") the flow gets a roster. Friends pick their name on the pay page, the owner sees who has paid and who owes what, and can email reminders (needs `RESEND_API_KEY`) or copy a message for the group chat. Paid status is derived from the real payments, never stored separately.
 
+**Someone drops out.** Removing a person who hasn't paid offers two outcomes, each previewed first: *others cover it* (the cost stays and each share rises) or *the cost drops with them* (the goal and every payout are scaled down together, to the cent). It refuses if a payout was already sent or people have already paid more than the new total. The result comes with a message to paste into the group chat.
+
+**Invoices.** "Attach an invoice" reads a PNG, JPEG or WebP of a booking confirmation (payee, email, total, currency, due date, line items) with the same Bedrock model. The reply is treated as untrusted: amounts must be sane, the name is scrubbed, the email must validate, the date must be real. It fills the prompt box with a one-line sentence for you to check and edit; the document's own text is never given to the flow agent.
+
+**Currency.** A flow can be in USD, EUR, GBP, CAD or AUD, taken from what you write (`€1,800`, `£500`, `400 CAD`). Orders, the PayPal checkout button, payouts and every amount shown use that currency; flows without one are USD. A request that mixes currencies is refused rather than guessed.
+
 ## PayPal APIs used
 
 | API | Used for |
@@ -108,6 +114,7 @@ src/
 │   ├── dashboard/               Overview, Send, Flows, Payments, People, Templates, Settings
 │   └── api/
 │       ├── build-flow/          AI agent
+│       ├── read-invoice/        Reads an attached invoice image into a draft sentence
 │       ├── orders/  capture/    Contributor payments (public)
 │       ├── flows/               List, edit, delete; approve/ and refund/ for the owner
 │       ├── webhooks/paypal/     Signed payout confirmations
@@ -118,6 +125,7 @@ src/
 ├── data/                        Types, templates and landing copy
 └── lib/
     ├── agent.ts  flowRules.ts   Tool-calling agent and its code-level guard rails
+    ├── invoice.ts  bedrock.ts   Invoice reader and the shared Bedrock client
     ├── contribution.ts          Shared rules: shares, deadlines, refund eligibility
     ├── paypal.ts  refund.ts  release.ts   PayPal calls; the refund and scheduled-payout routines
     ├── store.ts  db.ts          Postgres store (owner-scoped, row-locked updates)
@@ -135,6 +143,9 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk · 
 - Sandbox only. Phone-number payouts work only in PayPal production.
 - A *manual* release condition ("after the event") holds the flow for the owner's approval; nothing verifies it automatically. A release *date* is paid automatically.
 - Reminder emails need an email provider (`RESEND_API_KEY`); without one, use the copy-message button.
+- Money in other currencies is shown correctly on each flow and its pay page, but the overview, Payments ledger and activity feed add amounts together, so they count US-dollar activity only.
+- Non-USD flows have not been paid end to end in the PayPal sandbox. Whether a sandbox account accepts a given currency depends on its settings.
+- Invoice reading takes images only (PNG, JPEG, WebP), not PDFs, and is checked by you before anything is built.
 - The daily job (deadline refunds and scheduled payouts) has not been observed running on Vercel; the routines it calls are the same ones used by the owner's buttons.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.
 

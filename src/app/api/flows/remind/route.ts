@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getAllFlows, updateFlow } from "@/lib/store";
-import { isPastDeadline, rosterStatus } from "@/lib/contribution";
+import { currencyOf, isPastDeadline, rosterStatus } from "@/lib/contribution";
 import { emailConfigured, sendReminderEmail } from "@/lib/email";
 
 /** One reminder per person per hour, so this can't be used to spam anyone. */
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       owed: s.outstanding,
       link,
       deadline: flow.deadline,
+      currency: currencyOf(flow),
     });
     if (ok) {
       sent.push(s.name);

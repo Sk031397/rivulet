@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { deleteFlow, updateFlow, getFlowByIdUnscoped } from "@/lib/store";
 import { toPublicFlow } from "@/lib/publicFlow";
 import { cleanRecipient } from "@/lib/flowRules";
-import { MAX_ROSTER, cleanMemberName, refundable } from "@/lib/contribution";
+import { MAX_ROSTER, cleanMemberName, planResplit, refundable, type ResplitMode, type ResplitPlan } from "@/lib/contribution";
 import type { RosterMember } from "@/data/dashboard";
 
 /**
@@ -50,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params;
 
-  let body: { name?: unknown; payouts?: unknown; roster?: unknown };
+  let body: { name?: unknown; payouts?: unknown; roster?: unknown; resplit?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -60,6 +60,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const hasName = body.name !== undefined;
   const hasPayouts = body.payouts !== undefined;
   const hasRoster = body.roster !== undefined;
+  const resplit: ResplitMode = body.resplit === "shrink" ? "shrink" : "keep";
+  let resplitPlan: Extract<ResplitPlan, { ok: true }> | null = null;
 
   if (!hasName && !hasPayouts && !hasRoster) {
     return Response.json({ error: "nothing to update" }, { status: 400 });
@@ -151,6 +153,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         refused.reason = `${dropped.name} has already paid, so they can't be removed.`;
         return;
       }
+      // "shrink": the cost falls with the people who leave, so scale the goal and payouts.
+      const removedCount = (f.roster ?? []).filter((m) => !keep.has(m.id)).length;
+      if (removedCount > 0 && resplit === "shrink") {
+        if (f.status !== "Collecting") {
+          refused.reason = "Only a flow that is still collecting can have its total changed.";
+          return;
+        }
+        const plan = planResplit(f, removedCount, "shrink");
+        if (!plan.ok) {
+          refused.reason = plan.error;
+          return;
+        }
+        resplitPlan = plan;
+      }
     }
     if (recipientUpdates) {
       for (const u of recipientUpdates) {
@@ -180,6 +196,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (rebuilt.length >= 2) f.participants = rebuilt.length;
       } else {
         delete f.roster;
+      }
+      if (resplitPlan) {
+        f.goal = resplitPlan.goal;
+        f.payouts.forEach((p, i) => {
+          p.amount = resplitPlan!.payouts[i];
+        });
       }
     }
     if (recipientUpdates) {

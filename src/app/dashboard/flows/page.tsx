@@ -21,13 +21,12 @@ import PayoutsGrid, { newEditGuard, isEditGuardActive, type EditGuard } from "@/
 import { TripFacts, PayoutIssues, RefundControl, RosterPanel } from "@/components/dashboard/TripControls";
 import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
 import { setPinnedTotals, sumMoney } from "@/lib/gridHelpers";
+import { formatMoney } from "@/lib/contribution";
 import { type Flow, type FlowStatus } from "@/data/dashboard";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
-const money = (n: number) => `$${n.toLocaleString()}`;
-
 const FILTERS = ["All", "Collecting", "Needs approval", "Scheduled", "Paid out", "Refunded"] as const;
 type FlowFilter = (typeof FILTERS)[number];
 
@@ -61,6 +60,7 @@ function ProgressCell({ data }: { data: Flow }) {
 
 function CollectedCell({ data }: { data: Flow }) {
   if (!data) return null;
+  const money = (n: number) => formatMoney(n, data.currency, "auto");
   return (
     <span className="tabular-nums font-bold text-ink">
       {money(data.collected)}<span className="text-ink/40 font-normal"> / {money(data.goal)}</span>
@@ -124,6 +124,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
   };
 
   const needsApproval = flow.status === "Needs approval" || flow.status === "Scheduled";
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
 
   return (
     <>
@@ -229,7 +230,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
           )}
 
           {/* payouts: editable AG Grid */}
-          <PayoutsGrid flowId={flow.id} payouts={flow.payouts} refreshFlows={refreshFlows} editGuard={editGuard} />
+          <PayoutsGrid flowId={flow.id} payouts={flow.payouts} currency={flow.currency} refreshFlows={refreshFlows} editGuard={editGuard} />
 
           {/* PayPal resources */}
           {flow.resources && flow.resources.length > 0 && (
@@ -272,7 +273,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
                       <p className="font-bold text-ink truncate">{r.label}</p>
                       <p className="text-[11px] font-mono text-ink/60 truncate">{r.recipient}</p>
                       {r.ok
-                        ? <p className="text-xs text-emerald-700">${r.amount.toFixed(2)} · {r.itemStatus ?? "—"}</p>
+                        ? <p className="text-xs text-emerald-700">{formatMoney(r.amount, flow.currency)} · {r.itemStatus ?? "—"}</p>
                         : <p className="text-xs text-coral truncate">{r.error ?? "failed"}</p>}
                     </div>
                     {r.ok ? <Check className="size-4 shrink-0 text-emerald-600" /> : <X className="size-4 shrink-0 text-coral" />}

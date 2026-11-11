@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { formatMoney } from "./contribution";
 
 const apiKey = process.env.RESEND_API_KEY;
 const resend = apiKey ? new Resend(apiKey) : null;
@@ -103,11 +104,13 @@ export async function sendReminderEmail(opts: {
   owed: number;
   link: string;
   deadline?: string;
+  currency?: string;
 }): Promise<boolean> {
   const due = opts.deadline ? ` Please pay by <strong style="color:#1a1a1a;">${escapeHtml(opts.deadline)}</strong>.` : "";
+  const owed = formatMoney(opts.owed, opts.currency);
   return sendEmail({
     to: opts.to,
-    subject: `Your $${opts.owed.toFixed(2)} share for ${opts.flowName.slice(0, 60)}`,
+    subject: `Your ${owed} share for ${opts.flowName.slice(0, 60)}`,
     html: `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f6f5f1;font-family:ui-sans-serif,system-ui,Arial,sans-serif;color:#1a1a1a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f5f1;padding:32px 0;">
 <tr><td align="center">
@@ -115,7 +118,7 @@ export async function sendReminderEmail(opts: {
 <tr><td style="padding:0 8px;">
 <p style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#4f46e5;margin:0 0 8px;">Rivulet</p>
 <h1 style="font-size:24px;font-weight:800;margin:0 0 8px;color:#1a1a1a;">${escapeHtml(opts.flowName)}</h1>
-<p style="font-size:16px;color:#555555;margin:0 0 24px;">Hi ${escapeHtml(opts.name)}, your share of <strong style="color:#1a1a1a;">$${opts.owed.toFixed(2)}</strong> is still open.${due}</p>
+<p style="font-size:16px;color:#555555;margin:0 0 24px;">Hi ${escapeHtml(opts.name)}, your share of <strong style="color:#1a1a1a;">${owed}</strong> is still open.${due}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
 <tr><td style="background:#1a1a1a;border-radius:999px;"><a href="${escapeHtml(opts.link)}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Pay my share</a></td></tr>
 </table>

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { listTransactions, transactionsToStats } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
+import { currencyOf } from "@/lib/contribution";
 
 const usd = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -9,8 +10,11 @@ export async function GET() {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
-  // Live flow data for this user
-  const flows = await getAllFlows(userId);
+  // Live flow data for this user. Totals add amounts together, so they count
+  // US-dollar flows only; flows in other currencies are shown on their own.
+  const allFlows = await getAllFlows(userId);
+  const otherCurrency = allFlows.filter((f) => currencyOf(f) !== "USD").length;
+  const flows = allFlows.filter((f) => currencyOf(f) === "USD");
   const activeFlows = flows.filter((f) => f.status !== "Paid out");
   const needsApproval = flows.filter((f) => f.status === "Needs approval").length;
   const flowCollected = flows.reduce((sum, f) => sum + f.collected, 0);
@@ -72,7 +76,7 @@ export async function GET() {
       // Describe the balance using the SAME source that produced it.
       note: `${usd(collected)} in · ${usd(paidOut)} out`,
     },
-    { label: "Collected this month", value: usd(collected), note: collectedNote },
+    { label: "Collected this month", value: usd(collected), note: otherCurrency ? `${collectedNote} · USD only` : collectedNote },
     { label: "Paid out",             value: usd(paidOut),   note: paidOutNote },
     { label: "Active flows",         value: String(activeFlows.length), note: activeNote },
   ];

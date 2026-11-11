@@ -48,7 +48,7 @@ export interface PayPalTransaction {
   transaction_info: {
     /** For a captured checkout payment this equals the capture id. */
     transaction_id?: string;
-    transaction_amount?: { value?: string };
+    transaction_amount?: { value?: string; currency_code?: string };
     transaction_subject?: string;
     transaction_note?: string;
     transaction_initiation_date?: string;
@@ -107,9 +107,20 @@ function timeAgo(iso: string): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+/**
+ * The overview, ledger and activity feed add amounts together, which only makes
+ * sense within one currency, so they count US-dollar activity. (A transaction
+ * with no currency is treated as USD.)
+ */
+export function isUsdTransaction(t: PayPalTransaction): boolean {
+  const code = t.transaction_info?.transaction_amount?.currency_code;
+  return !code || code === "USD";
+}
+
 /** Map PayPal transactions into the ActivityFeed shape. */
 export function transactionsToActivity(details: PayPalTransaction[]): ActivityItem[] {
   return (details ?? [])
+    .filter(isUsdTransaction)
     .map((t) => {
       const info = t.transaction_info ?? {};
       const amt = Number(info.transaction_amount?.value ?? 0);
@@ -139,7 +150,7 @@ export function transactionsToStats(details: PayPalTransaction[]): {
   let collected = 0;
   let paidOut = 0;
   let count = 0;
-  for (const t of details ?? []) {
+  for (const t of (details ?? []).filter(isUsdTransaction)) {
     const amt = Number(t.transaction_info?.transaction_amount?.value ?? 0);
     if (amt >= 0) collected += amt;
     else paidOut += Math.abs(amt);
@@ -158,6 +169,8 @@ export async function getOrder(orderId: string): Promise<{
   customId?: string;
   /** The roster member id we attached when the order was created, if any. */
   referenceId?: string;
+  /** Currency the order was created in (ISO 4217). */
+  currency?: string;
   amount?: number;
   error?: string;
   /** Present once the order has been captured. */
@@ -182,7 +195,7 @@ export async function getOrder(orderId: string): Promise<{
     purchase_units?: Array<{
       custom_id?: string;
       reference_id?: string;
-      amount?: { value?: string };
+      amount?: { value?: string; currency_code?: string };
       payments?: { captures?: Array<{ id?: string; status?: string; amount?: { value?: string } }> };
     }>;
   };
@@ -195,6 +208,7 @@ export async function getOrder(orderId: string): Promise<{
     status: data.status,
     customId: unit?.custom_id,
     referenceId: unit?.reference_id,
+    currency: unit?.amount?.currency_code,
     amount: Number(unit?.amount?.value ?? 0),
     captureId: capture?.id,
     captureStatus: capture?.status,
@@ -280,6 +294,8 @@ export async function createOrderForAmount(
   customId?: string,
   /** Server-chosen label for who this payment is for (a roster member id). */
   referenceId?: string,
+  /** ISO 4217 code. Must match the currency the PayPal button was loaded with. */
+  currency: string = "USD",
 ): Promise<{
   ok: boolean;
   orderId?: string;
@@ -299,7 +315,7 @@ export async function createOrderForAmount(
     body: JSON.stringify({
       intent: "CAPTURE",
       purchase_units: [{
-        amount: { currency_code: "USD", value: amount.toFixed(2) },
+        amount: { currency_code: currency, value: amount.toFixed(2) },
         description: description.slice(0, 127),
         ...(customId ? { custom_id: customId.slice(0, 127) } : {}),
         ...(referenceId ? { reference_id: referenceId.slice(0, 127) } : {}),
@@ -344,6 +360,7 @@ export interface PayoutResult {
 export async function disburseFlowPayouts(
   flow: {
     name: string;
+    currency?: string;
     payouts: Array<{
       id?: string;
       label: string;
@@ -396,6 +413,7 @@ export async function disburseFlowPayouts(
       note: `${flow.name} — ${p.label}`,
       // Lets the payout webhook find this payout again (ids look like "<flow>-p0").
       itemId: p.id,
+      currency: flow.currency,
     });
 
     results.push({
@@ -435,6 +453,8 @@ export async function createPayout(params: {
   note?: string;
   /** Our own id for this payout, echoed back by PayPal in webhooks as sender_item_id. */
   itemId?: string;
+  /** ISO 4217 code. Defaults to USD. */
+  currency?: string;
 }): Promise<{ ok: boolean; status?: number; batchId?: string; itemStatus?: string; error?: string }> {
   const token = await getAccessToken();
   if (!token) return { ok: false, error: "no_paypal_creds" };
@@ -454,7 +474,7 @@ export async function createPayout(params: {
       items: [
         {
           recipient_type: params.recipientType,
-          amount: { value: params.amount.toFixed(2), currency: "USD" },
+          amount: { value: params.amount.toFixed(2), currency: params.currency ?? "USD" },
           note: params.note ? params.note.slice(0, 255) : "Payment from Rivulet",
           sender_item_id: params.itemId ?? `rivulet-item-${Date.now()}`,
           receiver: params.recipient,

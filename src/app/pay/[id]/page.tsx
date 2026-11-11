@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { Check, Lock, Loader2 } from "lucide-react";
 import type { PublicFlow } from "@/lib/publicFlow";
-import { MIN_CONTRIBUTION, daysLeft, isPastDeadline, remainingFor, validateContribution } from "@/lib/contribution";
+import { MIN_CONTRIBUTION, daysLeft, formatMoney, isPastDeadline, remainingFor, validateContribution } from "@/lib/contribution";
 
 /* Minimal PayPal JS SDK typing for the parts we use. */
 interface PayPalButtonsOptions {
@@ -51,11 +51,8 @@ interface CaptureResponse {
   };
 }
 
-const money = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 /** Parse what the contributor typed ("$12.50", "1,000") into a number. */
-const parseAmount = (raw: string) => Number(raw.replace(/[$,\s]/g, ""));
+const parseAmount = (raw: string) => Number(raw.replace(/[^\d.]/g, ""));
 
 const PRESETS = [5, 10, 25, 50];
 
@@ -68,6 +65,14 @@ export default function PayPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const id = String(params?.id ?? "");
   const [flow, setFlow] = useState<PublicFlow | null>(null);
+  /** Amounts shown on this page, in the flow's own currency. */
+  const money = (n: number) => formatMoney(n, flow?.currency);
+  const currencySymbol = (() => {
+    const part = new Intl.NumberFormat("en-US", { style: "currency", currency: flow?.currency ?? "USD" })
+      .formatToParts(0)
+      .find((p) => p.type === "currency");
+    return part?.value ?? "$";
+  })();
   const [loading, setLoading] = useState(true);
   const [amountInput, setAmountInput] = useState("");
   const [memberId, setMemberId] = useState("");
@@ -201,7 +206,8 @@ export default function PayPage() {
     } else {
       const s = document.createElement("script");
       s.id = scriptId;
-      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD`;
+      const currency = flowRef.current?.currency ?? "USD";
+      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}`;
       s.async = true;
       s.onload = renderButtons;
       document.body.appendChild(s);
@@ -441,7 +447,7 @@ export default function PayPage() {
               )}
               <label htmlFor="contribution" className="font-bold text-ink">Your contribution</label>
               <div className="mt-2 flex items-center rounded-2xl bg-white px-4 ring-1 ring-ink/10 focus-within:ring-2 focus-within:ring-ultra">
-                <span className="text-ink/50">$</span>
+                <span className="text-ink/50">{currencySymbol}</span>
                 <input
                   id="contribution"
                   inputMode="decimal"
@@ -472,7 +478,7 @@ export default function PayPage() {
                       typed === p ? "bg-ink text-white ring-ink" : "bg-white text-ink/70 ring-ink/10 hover:ring-ultra"
                     }`}
                   >
-                    ${p}
+                    {formatMoney(p, flow.currency, "auto")}
                   </button>
                 ))}
                 <button

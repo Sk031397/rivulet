@@ -14,6 +14,7 @@ import Mark from "./Mark";
 import PayoutTile from "./PayoutTile";
 import { BRAND } from "@/data/content";
 import type { PublicFlow } from "@/lib/publicFlow";
+import { formatMoney } from "@/lib/contribution";
 
 /** Decoration only: icons and colors cycle across the tiles; labels and amounts are the flow's. */
 const TILE_STYLE: { icon: LucideIcon; tone: string }[] = [
@@ -31,14 +32,12 @@ const STATUS_ICON: Record<PublicFlow["status"], LucideIcon> = {
   Refunded: Wallet,
 };
 
-const money = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-
 /** y positions inside the 300×36 connector drawing */
 const RAIL_Y = 20;
 const END_Y = 36;
 
 export default function FlowMock({ flow }: { flow: PublicFlow }) {
+  const money = (n: number) => formatMoney(n, flow.currency, "auto");
   const tiles = flow.payouts.slice(0, MAX_TILES);
   const extra = flow.payouts.length - tiles.length;
   const n = tiles.length;

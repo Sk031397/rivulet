@@ -2,8 +2,7 @@
 
 import StatusPill from "./StatusPill";
 import type { Flow } from "@/data/dashboard";
-
-const money = (n: number) => `$${n.toLocaleString()}`;
+import { formatMoney } from "@/lib/contribution";
 
 export default function FlowList({ flows, selectedId, onSelect }: { flows: Flow[]; selectedId: string; onSelect: (id: string) => void }) {
   return (
@@ -34,7 +33,7 @@ export default function FlowList({ flows, selectedId, onSelect }: { flows: Flow[
                   />
                 </div>
                 <p className="mt-2 text-xs text-ink/65">
-                  {money(f.collected)} of {money(f.goal)} · {f.contributors} {f.contributors === 1 ? "person" : "people"}
+                  {formatMoney(f.collected, f.currency, "auto")} of {formatMoney(f.goal, f.currency, "auto")} · {f.contributors} {f.contributors === 1 ? "person" : "people"}
                 </p>
               </button>
             </li>

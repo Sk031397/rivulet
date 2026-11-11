@@ -26,6 +26,8 @@ Whoever books a group trip usually ends up fronting the money, then spends weeks
 
 **See who's in.** Name the people ("me, Sam, Priya and Jo") and the organizer sees exactly who has paid and who still owes, with reminder emails or a ready-made message for the group chat. Friends pick their name on the pay page, so each payment is tied to a person.
 
+**Roster, re-split and invoices.** Name the group and the organizer sees who has paid and who owes, with reminders. When someone drops out, a preview shows two outcomes (others cover it, or the cost drops with them and the payouts scale down to the cent). Attach a booking invoice and the app reads the payee, email, total, currency and due date into the prompt for you to check. Flows can be in USD, EUR, GBP, CAD or AUD.
+
 **Pay the vendors.** When the pot is full, Rivulet sends the PayPal payouts. A payout can also be scheduled for a date ("pay the villa host on March 3") and is released automatically that day. A signed PayPal webhook confirms each payout, and also catches a payment that is later refunded, reversed or disputed, so the pot never silently shrinks. If a payout fails, is returned, or sits unclaimed, the flow is flagged so the organizer can fix the recipient and retry.
 
 **Money back.** If the trip is cancelled the organizer can refund everyone with one click, and a daily job refunds flows that miss their deadline. Refunds are refused once any payout has been sent.
@@ -39,7 +41,7 @@ Also: a direct Send page, editable payouts in an AG Grid table (undo/redo, valid
 - **Next.js 16** (App Router, TypeScript), **Clerk** for sign-in, **Postgres** (Supabase) for storage, deployed on **Vercel**.
 - **Amazon Bedrock (Nova Lite)** through the Vercel AI SDK, as a **tool-calling agent**: `find_contacts`, `check_recipient`, `create_flow`. The agent can look up the user's contacts and validate payout destinations, but it cannot move money.
 - **Guard rails live in code, not the prompt.** Amounts must sum to the goal to the cent, recipients are validated, a payout can't be created as already paid, and payouts must name who *receives* money, not the contributors. Running the agent against live Bedrock showed a small model will invent a deadline, a payout date, group members or a release condition, so every one of those must trace back to the user's own words, checked in code. A date the user typed that didn't make it into the flow, or a "pay once…" that became an immediate payout, is reported as a warning instead of passing silently.
-- **Tested.** `npm test` runs 41 unit tests over the money rules (idempotent capture, one-time payout trigger, deadlines, refunds, shares, roster, scheduled release, reversed payments) and the AI guard rails.
+- **Tested.** `npm test` runs 62 unit tests over the money rules (idempotent capture, one-time payout trigger, deadlines, refunds, shares, roster, re-split arithmetic, scheduled release, reversed payments, currency formatting), the invoice reader's handling of untrusted model output, and the AI guard rails.
 - **AG Grid Community 33.3** for the Flows, Payments, People and payouts tables, with a shared theme, live updates, pinned totals, and date sort/filter.
 
 ### PayPal Developer Platform
@@ -95,5 +97,7 @@ Payments are mostly about trust and edge cases, not API calls. The interesting w
 - Everything runs in the **PayPal sandbox**.
 - A release condition like "after the event" holds a flow for the organizer's approval; it is not verified automatically. A release *date* is paid automatically.
 - Reminder emails need an email provider to be configured; otherwise the organizer copies the message into the group chat.
+- Money in other currencies is correct on each flow and its pay page, but the overview, ledger and activity feed total US-dollar activity only. Non-USD flows have not been paid end to end in the sandbox, and whether a sandbox account accepts a currency depends on its settings.
+- Invoice reading takes images (PNG, JPEG, WebP), not PDFs, and always shows the organizer what it read before anything is built.
 - The daily job (deadline refunds and scheduled payouts) is deployed but has not yet been observed running. The routines it calls are the same ones the owner's buttons use, and the refund routine was tested with a real sandbox payment.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.

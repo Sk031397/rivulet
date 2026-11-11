@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   checkRecipient,
   conditionRequested,
+  currencyFromPrompt,
   dateGrounded,
   dateWarnings,
   datesInText,
@@ -166,4 +167,23 @@ test("a stated 'pay by' date becomes the deadline, but a payout date does not", 
   assert.equal(deadlineFromPrompt("pay by December 5")?.slice(5), "12-05");
   assert.equal(deadlineFromPrompt(`pay the host on ${future}`), null);
   assert.equal(deadlineFromPrompt("pay the host 300"), null);
+});
+
+/* ─── currency written in the request ───────────────────────────────── */
+
+test("the currency is read from what the user wrote", () => {
+  assert.equal(currencyFromPrompt("Lisbon: €1,800 for flights"), "EUR");
+  assert.equal(currencyFromPrompt("pay the host 900 euros"), "EUR");
+  assert.equal(currencyFromPrompt("a £500 deposit"), "GBP");
+  assert.equal(currencyFromPrompt("400 CAD each"), "CAD");
+  assert.equal(currencyFromPrompt("A$300 for the camper"), "AUD");
+});
+
+test("plain dollars, or no currency at all, mean no override", () => {
+  assert.equal(currencyFromPrompt("collect $1,200 for the cabin"), null);
+  assert.equal(currencyFromPrompt("cabin weekend for 5 people, 1000 total"), null);
+});
+
+test("a request that mixes currencies is flagged, not guessed", () => {
+  assert.equal(currencyFromPrompt("€500 for the hotel and £300 for flights"), "MIXED");
 });

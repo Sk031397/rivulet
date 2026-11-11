@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, Clock, Search, ShieldCheck, Wand2, AlertTriangle } from "lucide-react";
+import { Sparkles, Clock, Search, ShieldCheck, Wand2, AlertTriangle, Paperclip, Loader2 } from "lucide-react";
 import { SUGGESTIONS, type Flow } from "@/data/dashboard";
 import { useAddressBook } from "@/lib/addressBook";
 import type { AgentStep } from "@/lib/agent";
+import { INVOICE_TYPES, MAX_INVOICE_BYTES } from "@/lib/invoiceLimits";
+import type { Invoice } from "@/lib/invoice";
+import { formatMoney } from "@/lib/contribution";
 
 interface BuildResponse {
   flow?: Flow;
@@ -25,6 +28,9 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const [countdown, setCountdown] = useState(0); // seconds remaining on rate-limit
   const [steps, setSteps]       = useState<AgentStep[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [reading, setReading] = useState(false);
+  const [invoiceNote, setInvoiceNote] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   // Saved + past-recipient contacts, so the agent can resolve "pay Maya" to an address.
   const { contacts } = useAddressBook();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -57,6 +63,54 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   };
 
   useEffect(() => () => { if (countdownRef.current) clearInterval(countdownRef.current); }, []);
+
+  /** Read a booking confirmation or invoice and fill the box with what it says, for the user to check. */
+  const readInvoiceFile = async (file: File) => {
+    setError("");
+    setMode("");
+    setInvoiceNote("");
+    if (!(INVOICE_TYPES as readonly string[]).includes(file.type)) {
+      setError("Attach a PNG, JPEG or WebP image of the invoice.");
+      return;
+    }
+    if (file.size > MAX_INVOICE_BYTES) {
+      setError("That image is too large. Keep it under 2.5 MB.");
+      return;
+    }
+    setReading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Could not read that file."));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/read-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: file.type }),
+      });
+      const data = (await res.json()) as { invoice?: Invoice; prompt?: string; error?: string };
+      if (!res.ok || !data.invoice || !data.prompt) throw new Error(data.error ?? "Couldn't read that invoice.");
+
+      const inv = data.invoice;
+      setText(data.prompt);
+      const bits = [
+        inv.payee ? `payee ${inv.payee}` : null,
+        inv.total !== null ? `total ${formatMoney(inv.total, inv.currency, "auto")}` : null,
+        inv.dueDate ? `due ${inv.dueDate}` : null,
+      ].filter(Boolean);
+      const warn = inv.itemsMatchTotal === false ? " The line items don't add up to the total, so check the amount." : "";
+      setInvoiceNote(
+        `Read from “${file.name}”: ${bits.join(", ") || "nothing clear"}.${warn} Check it, then add who's going and when everyone pays.`,
+      );
+    } catch (e) {
+      setError((e as Error).message ?? "Couldn't read that invoice.");
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
 
   const build = async () => {
     if (!text.trim() || building || countdown > 0) return;
@@ -147,7 +201,29 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
           <p className="font-semibold text-coral">{error}</p>
         ) : mode ? (
           <p className="font-semibold text-emerald-700">{mode}</p>
+        ) : invoiceNote ? (
+          <p className="font-semibold text-ultra">{invoiceNote}</p>
         ) : null}
+      </div>
+
+      <div className="mt-1 flex items-center gap-3">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="sr-only"
+          aria-label="Attach an invoice image"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void readInvoiceFile(f); }}
+        />
+        <button
+          type="button"
+          disabled={blocked || reading}
+          onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-ink/70 ring-1 ring-ink/15 transition hover:text-ink hover:ring-ink disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {reading ? <><Loader2 className="size-3.5 animate-spin" /> Reading invoice…</> : <><Paperclip className="size-3.5" /> Attach an invoice</>}
+        </button>
+        <span className="text-xs text-ink/45">PNG, JPEG or WebP. We read the payee and amount; you check it before building.</span>
       </div>
 
       {/* What the agent did, step by step */}
