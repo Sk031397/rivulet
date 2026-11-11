@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
+import { DEMO_PROFILE, useIsDemo } from "@/lib/demoClient";
 import Mark from "@/components/Mark";
 import { BRAND } from "@/data/content";
 import { SIDEBAR } from "@/data/dashboard";
@@ -18,8 +19,9 @@ function initials(name: string): string {
 /** Slim brand bar shown at the top of dashboard pages on mobile/tablet (< lg). */
 export function MobileTopbar() {
   const { user } = useUser();
+  const isDemo = useIsDemo();
   const userInit = initials(
-    user?.fullName ?? user?.firstName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? ""
+    isDemo && !user ? DEMO_PROFILE.fullName : user?.fullName ?? user?.firstName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? ""
   );
 
   return (

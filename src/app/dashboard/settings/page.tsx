@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
+import { DEMO_PROFILE, useIsDemo } from "@/lib/demoClient";
 import {
   Plus, CreditCard, Trash2, X, Check, Eye, EyeOff,
   Camera, Shield, AlertTriangle, Smartphone, KeyRound,
@@ -409,6 +410,17 @@ export default function SettingsPage() {
     setSaved({ firstName: fn, lastName: ln, email: em, phone: ph });
     setAvatarSrc(user.imageUrl ?? null);
   }, [isLoaded, user]);
+
+  // Demo visitors have no Clerk user: show a generic profile instead of a blank form.
+  const isDemo = useIsDemo();
+  useEffect(() => {
+    if (!isLoaded || user || !isDemo) return;
+    const { firstName: fn, lastName: ln, email: em } = DEMO_PROFILE;
+    setFirstName(fn);
+    setLastName(ln);
+    setEmail(em);
+    setSaved({ firstName: fn, lastName: ln, email: em, phone: "" });
+  }, [isLoaded, user, isDemo]);
 
   /* notifications */
   const [notifications, setNotifications] = useState<Notifications>({

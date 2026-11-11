@@ -1,4 +1,4 @@
-import { getUserId } from "@/lib/session";
+import { DEMO_USER_ID, getUserId } from "@/lib/session";
 import { isUsdTransaction, listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import { currencyOf } from "@/lib/contribution";
@@ -36,7 +36,7 @@ export async function GET() {
   }
 
   // ── Source 1: PayPal transaction history ────────────────────────────
-  const details = await listTransactions();
+  const details = userId === DEMO_USER_ID ? null : await listTransactions();
   if (details && details.length > 0) {
     for (const t of details.filter(isUsdTransaction)) {
       const info = t.transaction_info ?? {};

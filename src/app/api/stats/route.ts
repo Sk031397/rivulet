@@ -1,4 +1,4 @@
-import { getUserId } from "@/lib/session";
+import { DEMO_USER_ID, getUserId } from "@/lib/session";
 import { listTransactions, transactionsToStats } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import { currencyOf } from "@/lib/contribution";
@@ -31,7 +31,7 @@ export async function GET() {
 
   // Choose ONE coherent source for the money figures so balance stays consistent:
   // prefer real PayPal activity when present, otherwise the flow store.
-  const details = await listTransactions();
+  const details = userId === DEMO_USER_ID ? null : await listTransactions();
   const hasPayPal = Boolean(details && details.length);
 
   let collected: number;

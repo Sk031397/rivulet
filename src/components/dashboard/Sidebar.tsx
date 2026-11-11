@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
+import { DEMO_PROFILE, useIsDemo } from "@/lib/demoClient";
 import { ArrowLeft, Settings, HelpCircle, LogOut, User, ChevronUp } from "lucide-react";
 import Mark from "@/components/Mark";
 import { BRAND } from "@/data/content";
@@ -92,8 +93,11 @@ export default function Sidebar() {
   const { user } = useUser();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const userName  = user?.fullName ?? user?.firstName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "Account";
-  const userEmail = user?.emailAddresses[0]?.emailAddress ?? "";
+  const isDemo = useIsDemo();
+  const demo = isDemo && !user;
+
+  const userName  = demo ? DEMO_PROFILE.fullName : user?.fullName ?? user?.firstName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "Account";
+  const userEmail = demo ? DEMO_PROFILE.email : user?.emailAddresses[0]?.emailAddress ?? "";
   const userInit  = initials(userName);
 
   return (
