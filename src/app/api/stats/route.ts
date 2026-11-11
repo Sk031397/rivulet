@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { listTransactions, transactionsToStats } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import { currencyOf } from "@/lib/contribution";
@@ -7,7 +7,7 @@ const usd = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   // Live flow data for this user. Totals add amounts together, so they count

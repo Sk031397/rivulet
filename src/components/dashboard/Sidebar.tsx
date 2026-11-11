@@ -71,7 +71,12 @@ function UserMenu({ name, email, onClose }: { name: string; email: string; onClo
       <div className="border-t border-ink/5 py-1">
         <button
           type="button"
-          onClick={() => { onClose(); signOut({ redirectUrl: "/sign-in" }); }}
+          onClick={() => {
+            onClose();
+            // Demo visitors have no Clerk session: ending the demo clears the cookie.
+            if (document.cookie.includes("rivulet_demo=1")) { window.location.href = "/api/demo?exit=1"; return; }
+            signOut({ redirectUrl: "/sign-in" });
+          }}
           className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-semibold text-coral transition hover:bg-coral/8"
         >
           <LogOut className="size-4" />

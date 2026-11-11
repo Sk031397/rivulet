@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { getAllFlows } from "@/lib/store";
 import { refundFlow } from "@/lib/refund";
 
@@ -11,7 +11,7 @@ import { refundFlow } from "@/lib/refund";
  * the flow Refunded. Refused once any payout has been sent.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { flowId?: unknown };

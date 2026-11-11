@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { deleteFlow, updateFlow, getFlowByIdUnscoped } from "@/lib/store";
 import { toPublicFlow } from "@/lib/publicFlow";
 import { cleanRecipient } from "@/lib/flowRules";
@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 /** DELETE /api/flows/[id] — remove one of the signed-in user's flows. */
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
@@ -45,7 +45,7 @@ interface RecipientUpdate {
  * (both may be present).
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;

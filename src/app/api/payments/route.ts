@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { isUsdTransaction, listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import { currencyOf } from "@/lib/contribution";
@@ -19,7 +19,7 @@ const fmtDate = (d: Date) =>
  * once (the flow-store row wins, since it knows the flow name and payer).
  */
 export async function GET() {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const payments: Payment[] = [];

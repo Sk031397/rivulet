@@ -212,6 +212,15 @@ export default function Hero({ flow }: { flow: PublicFlow | null }) {
           <Mark />
           <span className="font-display text-xl font-bold tracking-tight text-ink">{BRAND.name}</span>
         </Link>
+        <div className="ml-auto flex items-center gap-3">
+          <Link href="/sign-in" className="rounded-full px-4 py-2 text-sm font-bold text-ink transition hover:text-ultra">
+            Log in
+          </Link>
+          {/* Plain <a>: /api/demo sets the demo cookie and redirects to the dashboard. */}
+          <a href="/api/demo" className="rounded-full bg-ink px-5 py-2 text-sm font-bold text-white transition hover:bg-ultra">
+            Try the demo
+          </a>
+        </div>
       </div>
 
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 pb-24 pt-6 lg:grid-cols-2 lg:px-8 lg:pb-32">

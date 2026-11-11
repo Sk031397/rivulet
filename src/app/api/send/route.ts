@@ -1,11 +1,11 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { createPayout } from "@/lib/paypal";
 import { sendPaymentReceivedEmail } from "@/lib/email";
 
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { recipient?: unknown; amount?: unknown; note?: unknown };

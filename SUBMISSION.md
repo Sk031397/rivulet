@@ -8,6 +8,10 @@
 
 **Rivulet**
 
+## Tagline
+
+**Say the trip. Rivulet pays for it.**
+
 ## Elevator Pitch
 
 The group trip, paid for. Describe the trip in one sentence; Rivulet collects everyone's share through PayPal, pays the villa, flights and dinner when the pot is full, and refunds everyone if the trip falls through.

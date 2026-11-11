@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { getAllFlows, updateFlow } from "@/lib/store";
 import { currencyOf, isPastDeadline, rosterStatus } from "@/lib/contribution";
 import { emailConfigured, sendReminderEmail } from "@/lib/email";
@@ -16,7 +16,7 @@ const REMIND_COOLDOWN_MS = 60 * 60 * 1000;
  * honestly who was emailed, who was skipped and why.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { flowId?: unknown; memberId?: unknown };

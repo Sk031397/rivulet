@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getUserId } from "@/lib/session";
 import { MODEL_ID, makeBedrock } from "@/lib/bedrock";
 import { INVOICE_TYPES, MAX_INVOICE_BYTES, invoicePrompt, readInvoice } from "@/lib/invoice";
 
@@ -12,7 +12,7 @@ import { INVOICE_TYPES, MAX_INVOICE_BYTES, invoicePrompt, readInvoice } from "@/
  * It creates nothing and moves no money.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
+  const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   let body: { image?: unknown; mediaType?: unknown };
