@@ -7,7 +7,7 @@
  */
 
 import type { Flow } from "@/data/dashboard";
-import { canRefund, refundable } from "./contribution";
+import { canRefund, recomputeTotals, refundable } from "./contribution";
 import { refundCapture } from "./paypal";
 import { updateFlowUnscoped } from "./store";
 
@@ -56,12 +56,8 @@ export async function refundFlow(flowId: string): Promise<RefundOutcome> {
         c.refundId = done.get(c.id);
       }
     }
-    f.collected = Number(
-      (f.contributions ?? []).filter((c) => !c.refundedAt).reduce((s, c) => s + c.amount, 0).toFixed(2),
-    );
+    recomputeTotals(f);
     if (refundable(f).length === 0) f.status = "Refunded";
-    // The count of people currently in: refunded payments no longer count.
-    f.contributors = refundable(f).length;
     f.disbursingAt = undefined;
   });
 

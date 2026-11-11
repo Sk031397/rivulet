@@ -1,166 +1,99 @@
 # Rivulet — Hackathon Submission
 
+**Live demo:** https://rivulet-iota.vercel.app (PayPal sandbox)
+
 ---
 
 ## Project Name
 
 **Rivulet**
 
----
-
 ## Elevator Pitch
 
-Describe what you want to do with money. Rivulet builds the flow, collects the funds, and pays everyone out — automatically.
+The group trip, paid for. Describe the trip in one sentence; Rivulet collects everyone's share through PayPal, pays the villa, flights and dinner when the pot is full, and refunds everyone if the trip falls through.
 
 ---
 
 ## Inspiration
 
-Most payment tools are built for one thing: send money to one person. But real life is messier. A band splitting ticket sales. Friends pooling for a trip. A freelancer waiting on three milestone payments. A charity trying to split donations across causes.
-
-The gap between "send $20 to a friend" and "manage a multi-party payment flow" is enormous — and nothing fills it. You either DIY with spreadsheets or pay for enterprise software that takes a week to set up.
-
-We asked: what if you could just *describe* what you want to happen with money — and it happened?
-
----
+Whoever books a group trip usually ends up fronting the money, then spends weeks chasing friends for their share. Payment apps move money between two people. Nothing handles the real shape of a trip: many people paying in, several vendors paid out, a deadline, and a way back if it falls apart.
 
 ## What It Does
 
-**Type it. Build it. Get paid.**
+**Say the trip.** Type something like *"Lisbon for 4 friends: $1,000 to the villa host and $600 for flights. Everyone pays within 14 days."* An AI agent on Amazon Bedrock works out the total, each person's share, the payouts and the deadline.
 
-Rivulet turns a plain-English sentence into a complete, live payment flow in seconds.
+**One link.** Friends open a pay page that shows their share, how many shares are covered, and the days left. They pay with PayPal; no account on our side.
 
-**→ AI-generated flows**
-Tell Rivulet what you need: *"Pay designer@example.com $300 for wireframes and dev@example.com $500 for the build — collect $800 from the client first."* Amazon Bedrock (Nova Lite) designs the payout structure and creates a real PayPal order before you finish reading the result.
+**See who's in.** Name the people ("me, Sam, Priya and Jo") and the organizer sees exactly who has paid and who still owes, with reminder emails or a ready-made message for the group chat. Friends pick their name on the pay page, so each payment is tied to a person.
 
-**→ Shareable collect pages**
-Every flow gets a `/pay/[id]` link. Share it. Each contributor pays their share through PayPal's native checkout — no account needed on their end.
+**Pay the vendors.** When the pot is full, Rivulet sends the PayPal payouts. A payout can also be scheduled for a date ("pay the villa host on March 3") and is released automatically that day. A signed PayPal webhook confirms each payout, and also catches a payment that is later refunded, reversed or disputed, so the pot never silently shrinks. If a payout fails, is returned, or sits unclaimed, the flow is flagged so the organizer can fix the recipient and retry.
 
-**→ Automatic payouts the moment the goal is hit**
-Goal reached? Done. Rivulet instantly fires PayPal Payouts to every recipient. No dashboard. No approval. No waiting. The last contributor sees who got paid right on the payment page.
+**Money back.** If the trip is cancelled the organizer can refund everyone with one click, and a daily job refunds flows that miss their deadline. Refunds are refused once any payout has been sent.
 
-**→ Send money in seconds**
-Skip the flow entirely. Enter an email, an amount, a note. One click. Real PayPal payout. Branded receipt in their inbox.
-
-**→ A dashboard that actually shows your money**
-Live stats, a full AG Grid payments ledger sourced from real PayPal transaction history, a flows table with progress bars and status filters, and a People page that knows who paid and who got paid.
+Also: a direct Send page, editable payouts in an AG Grid table (undo/redo, validation), a Payments ledger from PayPal transaction history, and an analytics overview.
 
 ---
 
 ## How We Built It
 
-**The short version:** Next.js on the outside, PayPal and Bedrock on the inside, AG Grid holding it all together.
+- **Next.js 16** (App Router, TypeScript), **Clerk** for sign-in, **Postgres** (Supabase) for storage, deployed on **Vercel**.
+- **Amazon Bedrock (Nova Lite)** through the Vercel AI SDK, as a **tool-calling agent**: `find_contacts`, `check_recipient`, `create_flow`. The agent can look up the user's contacts and validate payout destinations, but it cannot move money.
+- **Guard rails live in code, not the prompt.** Amounts must sum to the goal to the cent, recipients are validated, a payout can't be created as already paid, and payouts must name who *receives* money, not the contributors. Running the agent against live Bedrock showed a small model will invent a deadline, a payout date, group members or a release condition, so every one of those must trace back to the user's own words, checked in code. A date the user typed that didn't make it into the flow, or a "pay once…" that became an immediate payout, is reported as a warning instead of passing silently.
+- **Tested.** `npm test` runs 41 unit tests over the money rules (idempotent capture, one-time payout trigger, deadlines, refunds, shares, roster, scheduled release, reversed payments) and the AI guard rails.
+- **AG Grid Community 33.3** for the Flows, Payments, People and payouts tables, with a shared theme, live updates, pinned totals, and date sort/filter.
 
-**Stack:**
-- **Next.js 16** (App Router, TypeScript) — full-stack, single deployment
-- **Amazon Bedrock** (`amazon.nova-lite-v1:0`) — AI flow design via `@ai-sdk/amazon-bedrock` and the Vercel AI SDK (`generateText`)
-- **PayPal REST APIs** — Orders v2, Payouts v1, Capture, Transaction Reporting
-- **PayPal JS SDK** — native checkout buttons on every collect page
-- **@paypal/agent-toolkit** — PayPal agentic integration layer
-- **AG Grid Community 33.3** — data grids on Flows, Payments, and People pages
-- **Resend** — branded transactional email for receipts and invites
-- **Zod** — runtime validation of every AI response
-- **Tailwind CSS v4** — styling
+### PayPal Developer Platform
 
-**The AI pipeline:**
-1. User types a prompt → `POST /api/build-flow`
-2. Bedrock (`amazon.nova-lite-v1:0`) returns structured JSON: flow name, summary, goal, up to 8 payouts with labels, amounts, states, and recipient emails
-3. Zod's `FlowSchema` validates the shape — if the AI hallucinated a bad structure, we catch it before it touches PayPal
-4. A real PayPal order is created for the goal amount in the same request, and the approve URL is stored as a `FlowResource`
-5. The flow is saved to `flows.json` and the collect link is immediately live
-6. If Bedrock is down or rate-limited, a deterministic `mockFlow()` fallback kicks in — the UI never breaks
+| API | Used for |
+|---|---|
+| Orders v2 (create, get, capture) | A separate order per contributor, tagged with the flow id and verified at capture |
+| Payouts v1 | Paying vendors when the goal is met |
+| Payments v2 refunds | Returning each payment in full; the request id is derived from the capture id so a retry can't refund twice |
+| Webhooks | Signature-verified payout confirmations and failure handling, plus refunded, reversed and disputed payments |
+| Transaction Reporting | Payments ledger and activity feed |
+| JavaScript SDK | Checkout on the pay page |
 
-**The money pipeline:**
-- Contributor opens `/pay/[id]` → PayPal JS SDK renders `paypal.Buttons()` with the stored order ID
-- Pays via PayPal → `POST /api/capture` settles the order, increments `collected`, and stores payer identity
-- If `collected >= goal` → `createPayout()` fires to all recipients in a loop immediately
-- If all payouts succeed → flow status flips to `"Paid out"`
-- If every payout fails → flow falls to `"Needs approval"` for manual retry via the dashboard
+### Making the money safe
+
+Many people paying into one flow at once is the hard part:
+- Capture is idempotent on PayPal's capture id.
+- An order that no longer fits (flow filled, or deadline passed) is refused before the contributor is charged.
+- Updates run in row-locked transactions, and a payout lock prevents two payout runs, or a payout and a refund, on the same flow.
+- Public pages expose only a whitelist of flow data: no owner id, no recipient addresses.
 
 ---
 
 ## Challenges We Ran Into
 
-**One order, one capture — forever.**
-PayPal orders are single-use. Our first build created one order per flow and reused it for every contributor. The second person to pay would hit a 422 from PayPal. We rewired the collect page to create a fresh order per visit via `createOrderForAmount()`. Simple in hindsight, painful to debug in the sandbox.
+- **One order, one capture.** PayPal orders are single-use, so every contributor gets their own order, and capture verifies it belongs to the flow.
+- **Concurrent payers.** Two people can approve orders that individually fit but together don't. We recheck at capture and leave the second order uncaptured.
+- **Keeping the AI honest.** A small model drifts. Moving the rules into code and returning their errors to the model made it reliable without making it trusted.
+- **Knowing a payout really landed.** Sending a payout isn't the same as the recipient getting it. Payouts carry their own id so the webhook can match PayPal's later events back to the right payout.
+- **Shipping it.** Hosting-specific problems: deployment protection blocking PayPal's webhook calls, per-deployment URLs versus the production domain, and AWS credentials that don't exist on a serverless host.
 
-**The AI doesn't always follow instructions.**
-Bedrock sometimes wraps its JSON output in markdown fences despite the system prompt saying not to. We built `stripFences()` and a regex extraction layer so Zod gets clean JSON regardless of what the model wraps it in. Rate limits (`ThrottlingException` / 429) hit without warning — we catch them and return a structured `{ error: "rate_limit", retryAfter }` response so the UI can show a live countdown timer.
+## Accomplishments
 
-**"Who actually paid?"**
-Our initial `captureOrder()` only extracted the dollar amount and discarded the rest of the PayPal response. The full capture response has `payer.email_address` and `payer.name` sitting right there. We extended the function to return `payerEmail`, `payerName`, and `payerId`, stored contributors as a structured list, and wired it into the People page so real names appear instead of "Contributor 1."
-
-**Phone payouts in sandbox.**
-The PayPal sandbox only accepts `EMAIL` as a `recipient_type` for the Payouts API — `PHONE` is silently rejected. We added an explicit check in `/api/send` that returns a clear 400 error in non-production, so users aren't left wondering why a payout vanished.
-
-**Rename that vanished on refresh.**
-Flow renaming worked great — until you refreshed. Local state only. We added `PATCH /api/flows/[id]`, wired both rename inputs to call it, and added a "Saving…" state so users know the name persisted to `flows.json`.
-
----
-
-## Accomplishments That We're Proud Of
-
-**The full loop runs on real infrastructure.**
-Prompt → AI → PayPal order → collect link → contributor pays → funds captured → payouts fire → recipients notified. Every step is real. Nothing is simulated.
-
-**Five PayPal APIs, one coherent experience.**
-Orders (create + capture), Payouts, Transaction Reporting, and the JS SDK — most projects touch one. We use all five for distinct purposes that couldn't be swapped. The Transaction Reporting API alone powers the entire Payments ledger with live data.
-
-**AG Grid 33 with real data on three pages.**
-Not a demo grid. Every row in Payments is a real PayPal transaction or a real flow capture. Every row in Flows is a live entry in the store. Every person in People is a real payer extracted from a PayPal capture response. Community edition — no Enterprise license needed.
-
-**It degrades gracefully instead of exploding.**
-No PayPal creds → clean zero-state dashboard. Bedrock down → mock flow returned. Resend key missing → emails skipped silently. Rate limited → countdown timer. Nothing throws an unhandled 500 at the user.
-
-**Auto-disburse is unconditional.**
-The moment the last contribution tips the flow over its goal, `POST /api/capture` fires every payout in the same request — no second action needed from the flow owner. The contributor who pushed it over sees the payout breakdown on the thank-you page.
-
----
+- A complete, tested loop on the live site: AI plan → contributor pays → payout → webhook confirms (`SUCCESS`) → separate refund test, which recorded a real PayPal refund id and reset the flow to Refunded.
+- No mock data in the product. Every figure on a page comes from a real flow or PayPal transaction.
+- The agent was run against live Bedrock on a 29-case suite during development, scoring 26–29 of 29 across runs.
 
 ## What We Learned
 
-**PayPal order lifecycle is unforgiving.** One order, one capture, full stop. Designing for multiple contributors means multiple orders — you can't share them.
+Payments are mostly about trust and edge cases, not API calls. The interesting work was deciding what must never happen (double payout, charging an order that doesn't fit, refunding after payout) and making the code, not the AI, enforce it.
 
-**Structured AI output needs a safety net.** Even well-instructed models drift. Zod validation after every AI call is non-negotiable. If the schema doesn't parse, you catch it before any money moves.
+## What's Next
 
-**AG Grid Community is more powerful than its name suggests.** Custom cell renderers, floating filters, quick search, multi-sort, pagination, and CSV export — all in the Community tier. No Enterprise license needed for a genuinely great data grid.
-
-**The hardest part of payments isn't the API.** It's trust. The UI has to make it obvious where the money is, where it's going, and what happens next — at every step.
-
-**Graceful degradation is a product feature.** Being able to demo the full UI without live credentials — with realistic copy and a coherent flow — meant we could develop and test the entire front-end without spending real money or burning API quota.
-
----
-
-## What's Next for Rivulet
-
-**Receipt scanning.** Point your phone at a dinner bill. Rivulet reads the line items, suggests a split, and builds the flow. AWS Textract + a vision model call. One feature away from the "split a group dinner" use case being fully real.
-
-**Webhooks instead of polling.** PayPal fires events when captures settle and payouts complete. Replacing the 10-second poll with a real webhook handler (`POST /api/webhooks/paypal`) makes every update instant and eliminates the `flows.json` polling loop.
-
-**Auth and multi-tenancy.** Right now all flows are visible to everyone. Real auth unlocks the Settings page, the People contact book, and the ability to share a flow with specific collaborators — and moves the store from a flat JSON file to a database.
-
-**Choose your contribution amount.** The collect page currently shows the remaining balance as the target amount. True crowd-funding means letting contributors pick any amount and accumulating toward the goal incrementally.
-
-**Multi-currency.** PayPal supports 25+ currencies. The flow builder is one system-prompt change away from handling GBP, EUR, CAD. The payout routes just need `currency_code` parameterized.
-
-**Flow templates as a starting point.** Six built-in templates (Group trip pool, Milestone project, Charity drive, etc.) are already in the UI. Wiring them into the PromptBox so one click pre-fills a prompt is a small step with a big UX payoff.
+- Real verification for manual release conditions ("pay the venue after the event") instead of holding for owner approval.
+- Production PayPal accounts, and phone-number payouts (production only).
+- Receipt scanning to split a dinner bill.
+- Multi-currency.
 
 ---
 
-## How This Project Meets the Main Technology Requirement
+## Honest limits
 
-**PayPal isn't an integration. It's the foundation.**
-
-Every dollar that moves in Rivulet moves through PayPal. No simulated payments. No placeholder transactions. Here's the exact API surface we use:
-
-| API | Endpoint | Purpose |
-|---|---|---|
-| Orders v2 | `POST /v2/checkout/orders` | Creates a fresh order per contributor when they open a collect page, and at flow creation time |
-| Orders v2 | `POST /v2/checkout/orders/{id}/capture` | Settles each contributor's payment, extracts payer identity (email, name, ID) |
-| Payouts v1 | `POST /v1/payments/payouts` | Auto-fires simultaneous disbursements to all recipients on goal completion |
-| Payouts v1 | `POST /v1/payments/payouts` | Powers the direct Send feature for one-off payments |
-| Transaction Reporting | `GET /v1/reporting/transactions` | Drives the live Payments ledger, stat cards, and activity feed |
-| PayPal JS SDK | `paypal.Buttons()` | Renders native checkout on every `/pay/[id]` collect page |
-| OAuth | `POST /v1/oauth2/token` | Authenticates every server-side call with in-process token caching |
-
-The AI designs the flow. PayPal executes it. They're coupled at the moment of creation — when Bedrock returns the payment plan, PayPal creates the order in the same API call. When the goal is hit, PayPal captures the funds and fires the payouts in the same HTTP round trip. The entire lifecycle — natural-language prompt to money in someone's account — runs on PayPal.
+- Everything runs in the **PayPal sandbox**.
+- A release condition like "after the event" holds a flow for the organizer's approval; it is not verified automatically. A release *date* is paid automatically.
+- Reminder emails need an email provider to be configured; otherwise the organizer copies the message into the group chat.
+- The daily job (deadline refunds and scheduled payouts) is deployed but has not yet been observed running. The routines it calls are the same ones the owner's buttons use, and the refund routine was tested with a real sandbox payment.
+- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.

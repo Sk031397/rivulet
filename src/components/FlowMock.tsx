@@ -26,6 +26,7 @@ const MAX_TILES = 3;
 const STATUS_ICON: Record<PublicFlow["status"], LucideIcon> = {
   Collecting: Wallet,
   "Needs approval": Clock,
+  Scheduled: Clock,
   "Paid out": Check,
   Refunded: Wallet,
 };

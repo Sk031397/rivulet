@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
-export default function UseCaseCard({ icon: Icon, title, text, fallback }: { icon: LucideIcon; title: string; text: string; img?: string; fallback: string }) {
+export default function UseCaseCard({ icon: Icon, title, text, fallback }: { icon: LucideIcon; title: string; text: string; fallback: string }) {
   const ref = useRef<HTMLElement>(null);
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
   const [spot, setSpot] = useState({ x: 50, y: 50, on: false });

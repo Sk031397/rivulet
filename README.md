@@ -1,8 +1,10 @@
 # Rivulet
 
-> Describe what you want to do with money. Rivulet builds the flow, collects the funds, and pays everyone out — automatically.
+> The group trip, paid for.
 
-A full-stack Next.js 16 app built for the PayPal hackathon. Type a plain-English goal, Amazon Bedrock designs the payout structure, PayPal creates a live order, and a shareable collect page goes live in seconds. When the goal is met, payouts fire automatically — no dashboard, no approval, no waiting.
+Whoever books a group trip usually fronts the money and then chases friends for their share. Rivulet fixes that. Describe the trip in one sentence; an AI agent builds the plan (each person's share, who gets paid, the deadline). Friends pay through PayPal using one link. When the pot is full the vendors are paid automatically, and PayPal's webhook confirms every payout. If the trip falls through or the deadline passes, everyone is refunded.
+
+Everything runs against the **PayPal sandbox**. No real money moves.
 
 ---
 
@@ -10,142 +12,132 @@ A full-stack Next.js 16 app built for the PayPal hackathon. Type a plain-English
 
 ```bash
 npm install
-npm run dev       # dev server at http://localhost:3000
-npm run build     # production build → /.next
-npm run start     # serve production build (honours PORT env var)
-npm run lint      # TypeScript type-check
+npm run dev       # http://localhost:3000
+npm run build     # production build
+npm run start     # serve the production build
+npm run lint      # TypeScript type-check (tsc --noEmit)
+npm test          # unit tests for the money rules and the AI guard rails (node:test, no extra dependencies)
 ```
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in the values you need.
+Create a `.env` file in the project root.
 
-| Variable | Required? | Description |
+| Variable | Needed for | Notes |
 |---|---|---|
-| `PAYPAL_CLIENT_ID` | For live payments | PayPal REST API client ID (sandbox or production) |
-| `PAYPAL_CLIENT_SECRET` | For live payments | PayPal REST API client secret |
-| `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | For collect pages | PayPal JS SDK client ID (exposed to the browser for `/pay/[id]`) |
-| `PAYPAL_ENVIRONMENT` | No | `SANDBOX` (default) or `PRODUCTION` |
-| `AWS_REGION` | For AI flow builder | AWS region for Amazon Bedrock (default `us-east-1`) |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | For AI flow builder | AWS credentials (or use `~/.aws/credentials`, IAM role, etc.) |
-| `RESEND_API_KEY` | For email | Resend API key for transactional receipts and invites |
-| `RESEND_FROM` | For email | Sender address (e.g. `payments@yourdomain.com`) |
+| `DATABASE_URL` | Everything | Postgres connection string. For Supabase use the pooler (port 6543). |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Sign-in | From your Clerk dashboard. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Payments, payouts, refunds | Sandbox REST app credentials. |
+| `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | Pay page checkout | Same client id, exposed to the browser. |
+| `PAYPAL_ENVIRONMENT` | Optional | `PRODUCTION` for live; anything else uses the sandbox. |
+| `PAYPAL_WEBHOOK_ID` | Payout confirmation | Id of the webhook you create in the PayPal dashboard. Without it every webhook call is rejected. |
+| `CRON_SECRET` | Deadline refunds | Any long random string. The daily job refuses to run without it. |
+| `BEDROCK_API_KEY` | AI flow builder (hosted) | Simplest option on Vercel. |
+| `BEDROCK_ACCESS_KEY_ID`, `BEDROCK_SECRET_ACCESS_KEY`, `BEDROCK_SESSION_TOKEN` | AI flow builder (hosted) | Alternative to the API key. Vercel reserves the plain `AWS_*` names. |
+| `BEDROCK_REGION`, `BEDROCK_MODEL_ID` | Optional | Default `us-east-1` and `amazon.nova-lite-v1:0`. |
+| `RESEND_API_KEY`, `RESEND_FROM` | Optional | Receipt and invite emails. Skipped silently when unset. |
 
-**Running without credentials:**
-- No PayPal creds → the dashboard shows zeros, stat cards show sample copy, no real payments are made.
-- No AWS creds → the AI flow builder falls back to a deterministic `mockFlow()` — the UI never breaks.
-- No Resend key → emails are skipped silently; payment operations are unaffected.
+Locally, Bedrock credentials come from the normal AWS chain (`~/.aws`, SSO, …) when none of the `BEDROCK_*` keys are set.
+
+**PayPal webhook:** in the PayPal developer dashboard add a webhook to your sandbox app pointing at `https://<your-domain>/api/webhooks/paypal` and copy its id into `PAYPAL_WEBHOOK_ID`. Subscribe it to:
+
+- `PAYMENT.PAYOUTS-ITEM.*` — payout succeeded, failed, returned, blocked, held or unclaimed
+- `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.REVERSED`, `PAYMENT.CAPTURE.DENIED` — a payment taken back after the fact
+- `CUSTOMER.DISPUTE.CREATED`, `CUSTOMER.DISPUTE.RESOLVED` — a payer disputes a payment
+
+Use a stable production domain, not a per-deployment Vercel URL.
 
 ---
 
 ## How it works
 
 ```
-User types a prompt
-       ↓
-POST /api/build-flow
-       ↓
-Amazon Bedrock (Nova Lite) → structured JSON flow plan
-       ↓                       (Zod-validated)
-PayPal Orders API → real sandbox order created
-       ↓
-Flow saved to flows.json, /pay/[id] goes live
-       ↓
-Contributor opens /pay/[id] → PayPal JS SDK renders checkout
-       ↓
-POST /api/capture → order settled, collected amount updated
-       ↓
-  collected >= goal?
-  YES → PayPal Payouts API fires to all recipients automatically
-  NO  → stay in "Collecting" state
+"Lisbon for 4 friends: $1,000 villa, $600 flights, pay by March 1"
+        ↓  POST /api/build-flow
+Bedrock agent (tools: find_contacts, check_recipient, create_flow)
+        ↓  rules enforced in code, not in the prompt
+Flow saved (owner-scoped Postgres row) → /pay/[id] is live
+        ↓
+Each contributor: POST /api/orders (their own PayPal order)
+        ↓  approve in PayPal
+POST /api/capture → verified, recorded idempotently
+        ↓
+Goal reached?  manual condition ("after the event") → held for the owner to approve
+               release date ("on March 3")        → paid automatically that day (daily cron)
+               otherwise                          → paid now
+        ↓
+PayPal → POST /api/webhooks/paypal (signature verified)
+        → payout confirmed, or flagged if it failed / was returned / unclaimed
+        → a payment refunded, reversed or disputed afterwards is taken out of the pot and flagged
+
+Trip cancelled or deadline missed → refund every payment (owner button or daily cron)
 ```
 
----
+**Roster.** If you name the people ("me, Sam, Priya and Jo") the flow gets a roster. Friends pick their name on the pay page, the owner sees who has paid and who owes what, and can email reminders (needs `RESEND_API_KEY`) or copy a message for the group chat. Paid status is derived from the real payments, never stored separately.
 
-## PayPal API surface
+## PayPal APIs used
 
-| API | Endpoint | Purpose |
-|---|---|---|
-| Orders v2 | `POST /v2/checkout/orders` | Fresh order per contributor and per flow creation |
-| Orders v2 | `POST /v2/checkout/orders/{id}/capture` | Settle payment, extract payer identity |
-| Payouts v1 | `POST /v1/payments/payouts` | Auto-disburse on goal completion; direct Send payments |
-| Transaction Reporting | `GET /v1/reporting/transactions` | Powers the Payments ledger, stat cards, and activity feed |
-| PayPal JS SDK | `paypal.Buttons()` | Native checkout on every `/pay/[id]` collect page |
-| OAuth | `POST /v1/oauth2/token` | Authenticates all server-side calls (token cached in-process) |
+| API | Used for |
+|---|---|
+| Orders v2 (create, get, capture) | One order per contributor, tagged with the flow id and checked at capture |
+| Payouts v1 | Paying vendors when the goal is met; the direct Send page |
+| Payments v2 refunds | Returning each contributor's payment in full (idempotent per capture) |
+| Webhooks (`verify-webhook-signature`) | Confirming payout outcomes |
+| Transaction Reporting | The Payments ledger, stat cards and activity feed |
+| JavaScript SDK | Checkout buttons on the pay page |
+| OAuth 2.0 | Server-side auth with an in-process token cache |
 
----
+## Money safety
+
+- Owner routes require a Clerk session and only touch that owner's flows. Contributor routes (`/api/orders`, `/api/capture`, `GET /api/flows/[id]`) are public by design and only expose a whitelist (`toPublicFlow`): no owner id, no recipient addresses.
+- Capture checks the order belongs to the flow, is idempotent on PayPal's capture id, and refuses to charge an order that no longer fits (flow filled, or deadline passed).
+- Updates run in row-locked transactions. A payout lock stops two payout runs, or a payout and a refund, on the same flow.
+- Refunds are refused once any payout has been sent.
+- Payouts carry their own id (`sender_item_id`) so the webhook can find them again.
+- The AI cannot invent a deadline, a payout date, a group member or a release condition: each must trace back to the user's own words, checked in code, and a date the user typed that didn't make it into the flow is reported back as a warning.
 
 ## Project structure
 
 ```
 src/
 ├── app/
-│   ├── page.tsx                  Landing page (Hero, Features, UseCases, HowItWorks)
-│   ├── dashboard/
-│   │   ├── page.tsx              Overview: PromptBox, FlowList, StatCards, ActivityFeed
-│   │   ├── flows/page.tsx        AG Grid flows table with FlowPanel slide-over
-│   │   ├── payments/page.tsx     AG Grid unified payment history + CSV export
-│   │   ├── send/page.tsx         Direct one-off PayPal payout form
-│   │   ├── people/page.tsx       Contributors and recipients from real captures
-│   │   ├── templates/page.tsx    Six pre-built flow templates
-│   │   └── settings/page.tsx     App settings
-│   ├── pay/[id]/page.tsx         Public contributor collect page (PayPal JS SDK)
+│   ├── page.tsx                 Landing page
+│   ├── pay/[id]/                Public contributor page (share, deadline, PayPal checkout)
+│   ├── dashboard/               Overview, Send, Flows, Payments, People, Templates, Settings
 │   └── api/
-│       ├── build-flow/           POST — AI flow builder (Bedrock → PayPal order)
-│       ├── flows/                GET — list all flows
-│       ├── flows/[id]/           PATCH (rename) / DELETE
-│       ├── flows/approve/        POST — manual payout approval
-│       ├── capture/              POST — capture PayPal order, auto-disburse if goal met
-│       ├── send/                 POST — direct one-off PayPal payout
-│       ├── payments/             GET — unified payment history
-│       ├── activity/             GET — live activity feed from PayPal transactions
-│       ├── stats/                GET — four stat cards (balance, collected, paid out, flows)
-│       └── invite/               POST — send branded invite email via Resend
-├── components/
-│   ├── dashboard/                Sidebar, PageHeader, StatCards, FlowList, FlowDetail,
-│   │                             FlowPanel, PromptBox, ActivityFeed, StatusPill, MobileNav
-│   └── (landing sections)        Hero, Features, UseCases, HowItWorks, CTA
-├── data/
-│   ├── content.ts                Brand, nav, features, use cases, how-it-works copy
-│   └── dashboard.ts              TypeScript interfaces + sidebar/template/suggestion copy
+│       ├── build-flow/          AI agent
+│       ├── orders/  capture/    Contributor payments (public)
+│       ├── flows/               List, edit, delete; approve/ and refund/ for the owner
+│       ├── webhooks/paypal/     Signed payout confirmations
+│       ├── cron/expire/         Daily refund of flows past their deadline
+│       ├── send/  invite/       Direct payout and invite email
+│       └── payments/ activity/ stats/   Reporting
+├── components/                  Landing sections and dashboard UI (AG Grid tables, TripControls)
+├── data/                        Types, templates and landing copy
 └── lib/
-    ├── flow.ts                   Zod schema (FlowSchema) + toDashboardFlow + mockFlow
-    ├── paypal.ts                 All PayPal REST helpers (OAuth, Orders, Payouts, Reporting)
-    ├── store.ts                  File-backed flow store (reads/writes flows.json)
-    ├── email.ts                  Resend transactional email templates
-    └── mock.ts                   Fallback data for when credentials are absent
-
-flows.json                        Persistent flow store (created automatically on first build)
+    ├── agent.ts  flowRules.ts   Tool-calling agent and its code-level guard rails
+    ├── contribution.ts          Shared rules: shares, deadlines, refund eligibility
+    ├── paypal.ts  refund.ts  release.ts   PayPal calls; the refund and scheduled-payout routines
+    ├── store.ts  db.ts          Postgres store (owner-scoped, row-locked updates)
+    └── publicFlow.ts            What anonymous contributors may see
+tests/                           Unit tests (npm test)
+vercel.json                      Daily cron: deadline refunds and scheduled payouts
 ```
 
----
+## Stack
 
-## Tech stack
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk · Postgres (`postgres` driver, Supabase) · Amazon Bedrock (Nova Lite) via the Vercel AI SDK · AG Grid Community 33.3 · Zod · Resend.
 
-| Technology | Version | Role |
-|---|---|---|
-| Next.js | ^16.4.5 | Full-stack framework (App Router, TypeScript) |
-| React | ^19.0.0 | UI |
-| Tailwind CSS | ^4.3.5 | Styling |
-| Amazon Bedrock (Nova Lite) | `amazon.nova-lite-v1:0` | AI flow designer |
-| Vercel AI SDK | ^7.0.164 | Bedrock integration (`generateText`) |
-| @ai-sdk/amazon-bedrock | ^5.0.134 | Bedrock provider |
-| @aws-sdk/credential-providers | ^3.1164.0 | AWS credential chain |
-| PayPal JS SDK | CDN | Browser checkout buttons |
-| @paypal/agent-toolkit | ^1.11.0 | PayPal agentic integration |
-| AG Grid Community | 33.3.0 | Data grids (Flows, Payments, People) |
-| Resend | ^6.37.0 | Transactional email |
-| Zod | ^4.6.7 | Runtime validation of AI output |
-| lucide-react | ^1.70.0 | Icons |
+## Known limits
 
----
+- Sandbox only. Phone-number payouts work only in PayPal production.
+- A *manual* release condition ("after the event") holds the flow for the owner's approval; nothing verifies it automatically. A release *date* is paid automatically.
+- Reminder emails need an email provider (`RESEND_API_KEY`); without one, use the copy-message button.
+- The daily job (deadline refunds and scheduled payouts) has not been observed running on Vercel; the routines it calls are the same ones used by the owner's buttons.
+- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.
 
 ## Renaming the brand
 
-Edit `BRAND` in `src/data/content.ts` and the `title` in `src/app/layout.tsx` metadata.
-
----
-
-> **Note:** this project was migrated from an earlier Vite build. The original Vite source (hash-routed pages, `useHashRoute`, `.jsx`/`.js` modules) has been moved to `.vite-legacy/` for reference and is not part of the build.
+Edit `BRAND` in `src/data/content.ts` and the metadata title in `src/app/layout.tsx`.

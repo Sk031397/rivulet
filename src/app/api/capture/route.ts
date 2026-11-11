@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
-import { captureOrder, getOrder, disburseFlowPayouts, type PayoutResult } from "@/lib/paypal";
+import { captureOrder, getOrder, type PayoutResult } from "@/lib/paypal";
 import { updateFlowUnscoped, getFlowByIdUnscoped } from "@/lib/store";
+import { disburseAndRecord } from "@/lib/release";
 import { toPublicFlow, maskRecipient } from "@/lib/publicFlow";
 import { isPastDeadline, recordContribution, remainingFor } from "@/lib/contribution";
 
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   let captureId: string | undefined;
+  const memberId = order.referenceId;
   let amount = 0;
   let captureStatus: string | undefined;
   let payer: string | undefined;
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
   let duplicate = false;
   let shouldDisburse = false;
   const recorded = await updateFlowUnscoped(flowId, (f) => {
-    const outcome = recordContribution(f, { id: captureId!, amount, payer });
+    const outcome = recordContribution(f, { id: captureId!, amount, payer, memberId });
     duplicate = outcome.duplicate;
     shouldDisburse = outcome.shouldDisburse;
   });
@@ -118,31 +120,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. If this contribution completed the goal, pay everyone out — exactly once.
+  // 4. If this contribution completed the goal, pay out what is due — exactly once.
+  //    Payouts with a future release date wait for the daily job; ones with a
+  //    manual condition wait for the owner (recordContribution never claims those).
   let results: PayoutResult[] = [];
   let finalFlow = recorded;
 
   if (shouldDisburse) {
-    let finalStatus: "Paid out" | "Needs approval" = "Needs approval";
-    try {
-      const disbursed = await disburseFlowPayouts(recorded);
-      results = disbursed.results;
-      finalStatus = disbursed.finalStatus;
-    } catch (err) {
-      // The contribution is already safely recorded; leave the flow for the
-      // owner to approve manually instead of failing the contributor's payment.
-      console.error("[capture] auto-disburse failed:", err);
-    }
-
-    const paidLabels = new Set(results.filter((r) => r.ok).map((r) => r.label));
-    const updated = await updateFlowUnscoped(flowId, (f) => {
-      f.status = finalStatus;
-      f.disbursingAt = undefined;
-      f.payouts = f.payouts.map((p) =>
-        paidLabels.has(p.label) ? { ...p, state: "paid" as const, paidAt: new Date().toISOString() } : p,
-      );
-    });
-    if (updated) finalFlow = updated;
+    const out = await disburseAndRecord(flowId, recorded);
+    results = out.results;
+    finalFlow = out.flow;
   }
 
   return Response.json({

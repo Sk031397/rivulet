@@ -16,7 +16,7 @@ import { validateContribution } from "@/lib/contribution";
  * approves it in PayPal and it is captured.
  */
 export async function POST(req: NextRequest) {
-  let body: { flowId?: unknown; amount?: unknown };
+  let body: { flowId?: unknown; amount?: unknown; memberId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -36,7 +36,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "PayPal checkout is not configured on the server." }, { status: 503 });
   }
 
-  const order = await createOrderForAmount(check.amount, `${flow.name} — contribution`, flow.id);
+  // Optional: which roster member this payment is for. Must be a real member —
+  // the id is attached to the PayPal order server-side and read back at capture.
+  const memberId = typeof body.memberId === "string" ? body.memberId : undefined;
+  if (memberId && !flow.roster?.some((m) => m.id === memberId)) {
+    return Response.json({ error: "That person isn't on this flow's list." }, { status: 400 });
+  }
+
+  const order = await createOrderForAmount(check.amount, `${flow.name} — contribution`, flow.id, memberId);
   if (!order.ok || !order.orderId) {
     return Response.json({ error: "Could not start the PayPal payment. Please try again." }, { status: 502 });
   }

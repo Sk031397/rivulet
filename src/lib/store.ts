@@ -112,3 +112,18 @@ export async function deleteFlow(id: string, ownerId: string): Promise<boolean> 
   const result = await sql`delete from flows where id = ${id} and owner_id = ${ownerId}`;
   return result.count > 0;
 }
+
+/**
+ * Find the flow that holds a given PayPal capture id (used by webhooks that
+ * only know the capture). Internal reconciliation only — unscoped by owner.
+ */
+export async function findFlowIdByCapture(captureId: string): Promise<string | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql<{ id: string }[]>`
+    select id from flows
+    where data->'contributions' @> ${sql.json([{ id: captureId }])}
+    limit 1
+  `;
+  return rows[0]?.id ?? null;
+}

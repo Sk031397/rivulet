@@ -26,15 +26,14 @@ export interface UseCase {
   icon: LucideIcon;
   title: string;
   text: string;
-  img: string;
   fallback: string;
 }
 
 export const USE_CASES: UseCase[] = [
-  { icon: Home, title: "House rentals", text: "Deposit now, balance later.", img: "/images/house.jpg", fallback: "from-emerald-600 to-saffron" },
-  { icon: Mountain, title: "Ski & road trips", text: "Lodging, lifts and fuel.", img: "/images/ski.jpg", fallback: "from-ink to-ultra" },
-  { icon: Plane, title: "Group flights", text: "Reimburse whoever booked.", img: "/images/travel.jpg", fallback: "from-coral to-ultra" },
-  { icon: PartyPopper, title: "Party weekends", text: "Hotel, activities, dinner.", img: "/images/party.jpg", fallback: "from-ultra to-mint" },
+  { icon: Home, title: "House rentals", text: "Deposit now, balance later.", fallback: "from-emerald-600 to-saffron" },
+  { icon: Mountain, title: "Ski & road trips", text: "Lodging, lifts and fuel.", fallback: "from-ink to-ultra" },
+  { icon: Plane, title: "Group flights", text: "Reimburse whoever booked.", fallback: "from-coral to-ultra" },
+  { icon: PartyPopper, title: "Party weekends", text: "Hotel, activities, dinner.", fallback: "from-ultra to-mint" },
 ];
 
 export interface Step {

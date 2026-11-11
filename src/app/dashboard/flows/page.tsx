@@ -18,7 +18,7 @@ import PageHeader from "@/components/dashboard/PageHeader";
 import StatusPill from "@/components/dashboard/StatusPill";
 import AutocompleteFloatingFilter from "@/components/dashboard/AutocompleteFloatingFilter";
 import PayoutsGrid, { newEditGuard, isEditGuardActive, type EditGuard } from "@/components/dashboard/PayoutsGrid";
-import { TripFacts, PayoutIssues, RefundControl } from "@/components/dashboard/TripControls";
+import { TripFacts, PayoutIssues, RefundControl, RosterPanel } from "@/components/dashboard/TripControls";
 import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
 import { setPinnedTotals, sumMoney } from "@/lib/gridHelpers";
 import { type Flow, type FlowStatus } from "@/data/dashboard";
@@ -28,7 +28,7 @@ ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
 /* ── helpers ─────────────────────────────────────────────────────────── */
 const money = (n: number) => `$${n.toLocaleString()}`;
 
-const FILTERS = ["All", "Collecting", "Needs approval", "Paid out", "Refunded"] as const;
+const FILTERS = ["All", "Collecting", "Needs approval", "Scheduled", "Paid out", "Refunded"] as const;
 type FlowFilter = (typeof FILTERS)[number];
 
 function collectLink(flowId: string) {
@@ -123,7 +123,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const needsApproval = flow.status === "Needs approval";
+  const needsApproval = flow.status === "Needs approval" || flow.status === "Scheduled";
 
   return (
     <>
@@ -189,6 +189,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
           </div>
 
           <TripFacts flow={flow} />
+          <RosterPanel flow={flow} onChange={refreshFlows} />
           <PayoutIssues flow={flow} />
 
           {/* collect link */}
@@ -314,7 +315,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
                 }
               }}
               className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra disabled:opacity-60 disabled:cursor-not-allowed">
-              {approving ? <><Loader2 className="size-4 animate-spin" /> Sending payouts…</> : <><Check className="size-4" /> Approve payouts</>}
+              {approving ? <><Loader2 className="size-4 animate-spin" /> Sending payouts…</> : <><Check className="size-4" /> {flow.status === "Scheduled" ? "Release now" : "Approve payouts"}</>}
             </button>
           )}
           {approved && (

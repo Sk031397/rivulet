@@ -4,6 +4,8 @@
 
 import type { ActivityItem } from "@/data/dashboard";
 
+import { payoutDue } from "./contribution";
+
 const HOST =
   process.env.PAYPAL_ENVIRONMENT === "PRODUCTION"
     ? "https://api-m.paypal.com"
@@ -154,6 +156,8 @@ export async function getOrder(orderId: string): Promise<{
   ok: boolean;
   status?: string;
   customId?: string;
+  /** The roster member id we attached when the order was created, if any. */
+  referenceId?: string;
   amount?: number;
   error?: string;
   /** Present once the order has been captured. */
@@ -177,6 +181,7 @@ export async function getOrder(orderId: string): Promise<{
     payer?: { email_address?: string; name?: { given_name?: string; surname?: string } };
     purchase_units?: Array<{
       custom_id?: string;
+      reference_id?: string;
       amount?: { value?: string };
       payments?: { captures?: Array<{ id?: string; status?: string; amount?: { value?: string } }> };
     }>;
@@ -189,6 +194,7 @@ export async function getOrder(orderId: string): Promise<{
     ok: true,
     status: data.status,
     customId: unit?.custom_id,
+    referenceId: unit?.reference_id,
     amount: Number(unit?.amount?.value ?? 0),
     captureId: capture?.id,
     captureStatus: capture?.status,
@@ -272,6 +278,8 @@ export async function createOrderForAmount(
   description: string,
   /** Stored on the PayPal purchase unit so a capture can be tied back to its flow. */
   customId?: string,
+  /** Server-chosen label for who this payment is for (a roster member id). */
+  referenceId?: string,
 ): Promise<{
   ok: boolean;
   orderId?: string;
@@ -294,6 +302,7 @@ export async function createOrderForAmount(
         amount: { currency_code: "USD", value: amount.toFixed(2) },
         description: description.slice(0, 127),
         ...(customId ? { custom_id: customId.slice(0, 127) } : {}),
+        ...(referenceId ? { reference_id: referenceId.slice(0, 127) } : {}),
       }],
       application_context: { brand_name: "Rivulet", user_action: "PAY_NOW" },
     }),
@@ -335,14 +344,30 @@ export interface PayoutResult {
 export async function disburseFlowPayouts(
   flow: {
     name: string;
-    payouts: Array<{ id?: string; label: string; amount: number; state: string; recipient?: string }>;
+    payouts: Array<{
+      id?: string;
+      label: string;
+      amount: number;
+      state: string;
+      recipient?: string;
+      condition?: string;
+      releaseOn?: string;
+    }>;
   },
-): Promise<{ results: PayoutResult[]; finalStatus: "Paid out" | "Needs approval" }> {
+  /**
+   * onlyDue (the automatic path): send just the payouts that are due without a
+   * person stepping in. The owner's Approve button passes false and releases all.
+   */
+  opts: { onlyDue?: boolean } = {},
+): Promise<{ results: PayoutResult[]; finalStatus: "Paid out" | "Scheduled" | "Needs approval" }> {
   const results: PayoutResult[] = [];
   const isProduction = process.env.PAYPAL_ENVIRONMENT === "PRODUCTION";
 
-  // Payouts eligible for disbursement: have a recipient and aren't already paid.
-  const eligible = flow.payouts.filter((p) => p.recipient && p.state !== "paid");
+  // Payouts eligible for disbursement: have a recipient, aren't already paid,
+  // and (on the automatic path) are actually due.
+  const eligible = flow.payouts.filter(
+    (p) => p.recipient && p.state !== "paid" && (!opts.onlyDue || payoutDue(p)),
+  );
 
   for (const p of eligible) {
     const recipient = p.recipient!.trim();
@@ -384,13 +409,18 @@ export async function disburseFlowPayouts(
     });
   }
 
-  // "Paid out" only when every eligible payout actually succeeded AND there was
-  // at least one. Otherwise the flow still needs attention.
-  const allSucceeded = results.length > 0 && results.every((r) => r.ok);
-  return {
-    results,
-    finalStatus: allSucceeded ? "Paid out" : "Needs approval",
-  };
+  // "Paid out" only when nothing is left unpaid. A payout that is simply waiting
+  // for its release date makes the flow "Scheduled"; anything else that is left
+  // (a failed send, a missing recipient, a manual condition) needs the owner.
+  const sentLabels = new Set(results.filter((r) => r.ok).map((r) => r.label));
+  const stillUnpaid = flow.payouts.filter((p) => p.state !== "paid" && !sentLabels.has(p.label));
+  const anyFailed = results.some((r) => !r.ok);
+  let finalStatus: "Paid out" | "Scheduled" | "Needs approval";
+  if (!anyFailed && stillUnpaid.length === 0 && results.length > 0) finalStatus = "Paid out";
+  else if (!anyFailed && stillUnpaid.length > 0 && stillUnpaid.every((p) => p.releaseOn && p.recipient)) {
+    finalStatus = "Scheduled";
+  } else finalStatus = "Needs approval";
+  return { results, finalStatus };
 }
 
 /**

@@ -7,7 +7,7 @@
  */
 
 import type { Flow, FlowStatus, PayoutState } from "@/data/dashboard";
-import { shareFor } from "./contribution";
+import { rosterStatus, shareFor, type MemberState } from "./contribution";
 
 export interface PublicFlow {
   id: string;
@@ -22,11 +22,14 @@ export interface PublicFlow {
   share?: number;
   /** ISO date (YYYY-MM-DD) after which no more money is accepted. */
   deadline?: string;
+  /** Who is in the group and whether they've paid. Names only — never emails. */
+  roster?: Array<{ id: string; name: string; state: MemberState; outstanding: number }>;
   payouts: Array<{ label: string; amount: number; state: PayoutState; note: string; condition?: string }>;
 }
 
 export function toPublicFlow(flow: Flow): PublicFlow {
   const share = shareFor(flow);
+  const roster = rosterStatus(flow);
   return {
     id: flow.id,
     name: flow.name,
@@ -37,6 +40,9 @@ export function toPublicFlow(flow: Flow): PublicFlow {
     ...(flow.participants ? { participants: flow.participants } : {}),
     ...(share !== null ? { share } : {}),
     ...(flow.deadline ? { deadline: flow.deadline } : {}),
+    ...(roster.length
+      ? { roster: roster.map((m) => ({ id: m.id, name: m.name, state: m.state, outstanding: m.outstanding })) }
+      : {}),
     payouts: flow.payouts.map((p) => ({
       label: p.label,
       amount: p.amount,

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       refusal = { status: 409, error: "A payout is already in progress for this flow." };
     } else if (f.status === "Paid out") {
       refusal = { status: 409, error: "This flow has already been paid out." };
-    } else if (f.status !== "Needs approval") {
+    } else if (f.status !== "Needs approval" && f.status !== "Scheduled") {
       refusal = { status: 409, error: "This flow isn't fully funded yet, so it can't be paid out." };
     } else {
       f.disbursingAt = new Date().toISOString();
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   let results: PayoutResult[] = [];
-  let finalStatus: "Paid out" | "Needs approval" = "Needs approval";
+  let finalStatus: "Paid out" | "Scheduled" | "Needs approval" = "Needs approval";
   try {
     const disbursed = await disburseFlowPayouts(claimed);
     results = disbursed.results;

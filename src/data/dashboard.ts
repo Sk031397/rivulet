@@ -57,6 +57,12 @@ export interface Payout {
   /** PayPal email of the recipient — required for real disbursement on approval. */
   recipient?: string;
   /**
+   * ISO date (YYYY-MM-DD). A payout with a release date is paid automatically on
+   * that day once the goal is met — no owner approval needed, because the
+   * condition ("on March 3") can be checked by the app itself.
+   */
+  releaseOn?: string;
+  /**
    * Set by the PayPal webhook when a payout that was sent did not land
    * (failed, returned, blocked, or unclaimed). Cleared when it is retried.
    */
@@ -72,7 +78,7 @@ export interface FlowResource {
   note: string;
 }
 
-export type FlowStatus = "Collecting" | "Needs approval" | "Paid out" | "Refunded";
+export type FlowStatus = "Collecting" | "Needs approval" | "Scheduled" | "Paid out" | "Refunded";
 
 /** One real, settled PayPal payment into a flow. */
 export interface Contribution {
@@ -87,6 +93,21 @@ export interface Contribution {
   refundId?: string;
   /** ISO time the refund was issued. */
   refundedAt?: string;
+  /** Roster member this payment was made for, when the payer picked their name. */
+  memberId?: string;
+  /** ISO time PayPal reversed or denied this payment; it no longer counts as collected. */
+  reversedAt?: string;
+  /** A problem PayPal reported with this payment (dispute, reversal). Owner-only. */
+  issue?: string;
+}
+
+/** One person in a group flow. The email is owner-only and used for reminders. */
+export interface RosterMember {
+  id: string;
+  name: string;
+  email?: string;
+  /** ISO time of the last reminder email sent to this person (rate-limits reminders). */
+  remindedAt?: string;
 }
 
 export interface Flow {
@@ -100,6 +121,8 @@ export interface Flow {
   contributors: number;
   /** Group size for a trip-style flow: each person's share is goal / participants. */
   participants?: number;
+  /** The named people in the group, when the organizer listed them. */
+  roster?: RosterMember[];
   /** ISO date (YYYY-MM-DD). After the end of this day no new contributions are accepted. */
   deadline?: string;
   /** Settled payments into this flow. Absent on flows created before this existed. */

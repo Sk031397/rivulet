@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { getSql, ensureSchema } from "@/lib/db";
-import { isPastDeadline } from "@/lib/contribution";
+import { isPastDeadline, payoutDue } from "@/lib/contribution";
 import { refundFlow } from "@/lib/refund";
+import { releaseDuePayouts } from "@/lib/release";
 import type { Flow } from "@/data/dashboard";
 
 /**
@@ -33,5 +34,22 @@ export async function GET(req: NextRequest) {
     const out = await refundFlow(f.id);
     results.push({ id: f.id, refunded: out.refunded, failed: out.failed });
   }
-  return Response.json({ checked: rows.length, expired: expired.length, results });
+
+  // Second job: funded flows whose payouts were waiting for a release date.
+  const scheduled = await sql<{ data: Flow }[]>`
+    select data from flows where data->>'status' = 'Scheduled'
+  `;
+  const released: Array<{ id: string; sent: number; failed: number }> = [];
+  for (const row of scheduled) {
+    if (!row.data.payouts.some((p) => payoutDue(p))) continue;
+    const out = await releaseDuePayouts(row.data.id);
+    if (out) {
+      released.push({
+        id: row.data.id,
+        sent: out.results.filter((r) => r.ok).length,
+        failed: out.results.filter((r) => !r.ok).length,
+      });
+    }
+  }
+  return Response.json({ checked: rows.length, expired: expired.length, results, scheduled: scheduled.length, released });
 }

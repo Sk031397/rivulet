@@ -5,6 +5,7 @@ import type { FlowStatus } from "@/data/dashboard";
 const TONES: Record<FlowStatus, string> = {
   Collecting: "bg-ultra/10 text-ultra",
   "Needs approval": "bg-coral/15 text-coral",
+  Scheduled: "bg-saffron/30 text-amber-900",
   "Paid out": "bg-mint/25 text-emerald-800",
   Refunded: "bg-ink/10 text-ink/70",
 };

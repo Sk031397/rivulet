@@ -70,6 +70,7 @@ export default function PayPage() {
   const [flow, setFlow] = useState<PublicFlow | null>(null);
   const [loading, setLoading] = useState(true);
   const [amountInput, setAmountInput] = useState("");
+  const [memberId, setMemberId] = useState("");
   const [paid, setPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
   const [capturing, setCapturing] = useState(false);
@@ -82,8 +83,10 @@ export default function PayPage() {
   // flow/amount through refs instead of closing over stale state.
   const flowRef = useRef<PublicFlow | null>(null);
   const amountRef = useRef("");
+  const memberRef = useRef("");
   flowRef.current = flow;
   amountRef.current = amountInput;
+  memberRef.current = memberId;
 
   /* Load the flow by id (public single-flow endpoint). */
   useEffect(() => {
@@ -146,7 +149,11 @@ export default function PayPage() {
           const res = await fetch("/api/orders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ flowId: flowRef.current?.id, amount: parseAmount(amountRef.current) }),
+            body: JSON.stringify({
+              flowId: flowRef.current?.id,
+              amount: parseAmount(amountRef.current),
+              ...(memberRef.current ? { memberId: memberRef.current } : {}),
+            }),
           });
           const data = (await res.json().catch(() => ({}))) as { orderId?: string; error?: string };
           if (!res.ok || !data.orderId) {
@@ -291,6 +298,23 @@ export default function PayPage() {
         </p>
       </div>
 
+      {/* who's in */}
+      {flow.roster && flow.roster.length > 0 && !refunded && (
+        <ul className="mt-4 flex flex-wrap justify-center gap-2" aria-label="Who has paid">
+          {flow.roster.map((m) => (
+            <li
+              key={m.id}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
+                m.state === "paid" ? "bg-mint/25 text-emerald-800" : m.state === "partial" ? "bg-saffron/30 text-amber-900" : "bg-ink/8 text-ink/60"
+              }`}
+            >
+              {m.state === "paid" && <Check className="size-3" />}
+              {m.name}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {/* checkout / status */}
       <div className="mt-8">
         {paid ? (
@@ -301,12 +325,16 @@ export default function PayPage() {
                 Thank you — {money(paidAmount)} received!
               </p>
               <p className="mt-1 text-sm text-ink/65">
-                {disburseResult && disburseResult.disbursed > 0
+                {flow.status === "Scheduled"
+                  ? disburseResult && disburseResult.disbursed > 0
+                    ? `Your contribution completed the goal. ${disburseResult.disbursed} payout${disburseResult.disbursed === 1 ? " was" : "s were"} sent now; the rest are scheduled for their release dates.`
+                    : "Your contribution completed the goal. The payouts are scheduled and will be sent automatically on their release dates."
+                  : disburseResult && disburseResult.disbursed > 0
                   ? `Your contribution completed the goal and triggered payouts to ${disburseResult.disbursed} recipient${disburseResult.disbursed === 1 ? "" : "s"}.`
                   : disburseResult
                     ? "Your contribution completed the goal. The organizer will release the payouts."
                     : funded && flow.status === "Needs approval"
-                      ? "That completes the goal. The organizer will confirm the release conditions and then pay out."
+                        ? "That completes the goal. The organizer will confirm the release conditions and then pay out."
                       : funded
                         ? "That completes the goal."
                         : `${money(remaining)} is still needed to reach the goal.`}
@@ -377,6 +405,40 @@ export default function PayPage() {
         ) : (
           <>
             <div className="rounded-2xl bg-paper p-5 ring-1 ring-ink/8">
+              {flow.roster && flow.roster.length > 0 && (
+                <div className="mb-4">
+                  <p className="font-bold text-ink">Who are you?</p>
+                  <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Choose your name">
+                    {flow.roster.filter((m) => m.state !== "paid").map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        aria-pressed={memberId === m.id}
+                        onClick={() => {
+                          setMemberId(m.id);
+                          setAmountInput(String(Math.min(m.outstanding || flow.share || 25, remaining)));
+                          setError("");
+                        }}
+                        className={`rounded-full px-3.5 py-1.5 text-sm font-bold ring-1 transition ${
+                          memberId === m.id ? "bg-ink text-white ring-ink" : "bg-white text-ink/70 ring-ink/10 hover:ring-ultra"
+                        }`}
+                      >
+                        {m.name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      aria-pressed={memberId === ""}
+                      onClick={() => setMemberId("")}
+                      className={`rounded-full px-3.5 py-1.5 text-sm font-bold ring-1 transition ${
+                        memberId === "" ? "bg-ink text-white ring-ink" : "bg-white text-ink/70 ring-ink/10 hover:ring-ultra"
+                      }`}
+                    >
+                      Someone else
+                    </button>
+                  </div>
+                </div>
+              )}
               <label htmlFor="contribution" className="font-bold text-ink">Your contribution</label>
               <div className="mt-2 flex items-center rounded-2xl bg-white px-4 ring-1 ring-ink/10 focus-within:ring-2 focus-within:ring-ultra">
                 <span className="text-ink/50">$</span>

@@ -31,14 +31,22 @@ export function isDisbursing(flow: { disbursingAt?: string }): boolean {
  */
 export function recordContribution(
   f: Flow,
-  c: { id: string; amount: number; payer?: string },
+  c: { id: string; amount: number; payer?: string; memberId?: string },
   now: Date = new Date(),
 ): { duplicate: boolean; shouldDisburse: boolean } {
   f.contributions ??= [];
   if (f.contributions.some((x) => x.id === c.id)) {
     return { duplicate: true, shouldDisburse: false };
   }
-  f.contributions.push({ id: c.id, amount: c.amount, at: now.toISOString(), payer: c.payer });
+  // Only label the payment with a member who is actually on the roster.
+  const memberId = c.memberId && f.roster?.some((m) => m.id === c.memberId) ? c.memberId : undefined;
+  f.contributions.push({
+    id: c.id,
+    amount: c.amount,
+    at: now.toISOString(),
+    payer: c.payer,
+    ...(memberId ? { memberId } : {}),
+  });
   f.collected = Number((f.collected + c.amount).toFixed(2));
   f.contributors += 1;
 
@@ -56,9 +64,32 @@ export function recordContribution(
   return { duplicate: false, shouldDisburse };
 }
 
-/** True while any not-yet-paid payout carries a release condition. */
+/**
+ * True while any not-yet-paid payout carries a release condition that only a
+ * person can confirm. A payout with a release DATE is not one of these: the app
+ * can check a date itself, so it never needs the owner to approve it.
+ */
 export function hasPendingCondition(f: Pick<Flow, "payouts">): boolean {
-  return f.payouts.some((p) => p.state !== "paid" && Boolean(p.condition));
+  return f.payouts.some((p) => p.state !== "paid" && Boolean(p.condition) && !p.releaseOn);
+}
+
+/** Today's date as YYYY-MM-DD in UTC (the same clock the deadlines use). */
+export function todayUtc(now: number = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+/**
+ * Whether an unpaid payout can be sent right now without the owner stepping in:
+ * no condition at all, or a release date that has arrived. A payout with a
+ * manual condition is never "due" on its own — only an owner approval releases it.
+ */
+export function payoutDue(
+  p: { state: string; condition?: string; releaseOn?: string },
+  now: number = Date.now(),
+): boolean {
+  if (p.state === "paid") return false;
+  if (p.releaseOn) return p.releaseOn <= todayUtc(now);
+  return !p.condition;
 }
 
 /** The moment a flow's deadline passes: the end of that calendar day, UTC. */
@@ -91,9 +122,29 @@ export function shareFor(flow: { goal: number; participants?: number }): number 
   return Math.ceil((flow.goal * 100) / n) / 100;
 }
 
+/** A payment that is still holding the contributor's money: not refunded, not reversed. */
+export function isLive(c: { refundedAt?: string; reversedAt?: string }): boolean {
+  return !c.refundedAt && !c.reversedAt;
+}
+
 /** Contributions that are still holding the contributor's money (not yet refunded). */
 export function refundable(flow: Pick<Flow, "contributions">) {
-  return (flow.contributions ?? []).filter((c) => !c.refundedAt);
+  return (flow.contributions ?? []).filter(isLive);
+}
+
+/**
+ * Bring `collected` and `contributors` back in line with the payments that are
+ * still live. Called after anything that can take money back out of a flow.
+ */
+export function recomputeTotals(f: Flow): void {
+  const live = refundable(f);
+  f.collected = Number((live.reduce((s, c) => s + toCents(c.amount), 0) / 100).toFixed(2));
+  f.contributors = live.length;
+}
+
+/** Payments PayPal later flagged: disputed, reversed or denied. Owner-facing. */
+export function paymentIssues(flow: Pick<Flow, "contributions">) {
+  return (flow.contributions ?? []).filter((c) => c.issue);
 }
 
 /**
@@ -147,4 +198,60 @@ export function validateContribution(
     return { ok: false, error: `Only $${remaining.toFixed(2)} is still needed — enter that or less.` };
   }
   return { ok: true, amount };
+}
+
+/* ─── Roster: who in the group has paid ──────────────────────────────── */
+
+export const MAX_ROSTER = 50;
+
+export type MemberState = "paid" | "partial" | "unpaid";
+
+export interface MemberStatus {
+  id: string;
+  name: string;
+  /** Money from this person that has not been refunded. */
+  paid: number;
+  /** What they still owe against their share (0 when the flow has no fixed share). */
+  outstanding: number;
+  state: MemberState;
+}
+
+/**
+ * Who has paid and who hasn't, derived from the real contributions — never
+ * stored separately, so it can't drift out of step with the money.
+ */
+export function rosterStatus(
+  flow: Pick<Flow, "goal" | "roster" | "participants" | "contributions">,
+): MemberStatus[] {
+  const roster = flow.roster ?? [];
+  const share = shareFor({ goal: flow.goal, participants: flow.participants ?? roster.length });
+  return roster.map((m) => {
+    const paidCents = (flow.contributions ?? [])
+      .filter((c) => c.memberId === m.id && isLive(c))
+      .reduce((s, c) => s + toCents(c.amount), 0);
+    const owedCents = share === null ? 0 : toCents(share);
+    const outstandingCents = Math.max(0, owedCents - paidCents);
+    const state: MemberState =
+      share === null
+        ? paidCents > 0 ? "paid" : "unpaid"
+        : outstandingCents === 0 ? "paid" : paidCents > 0 ? "partial" : "unpaid";
+    return { id: m.id, name: m.name, paid: paidCents / 100, outstanding: outstandingCents / 100, state };
+  });
+}
+
+/** A name safe to show and to put in an email: letters, numbers, spaces, . ' - only. */
+export function cleanMemberName(raw: unknown): string | null {
+  const s = String(raw ?? "")
+    .replace(/[^\p{L}\p{N} .'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+  return s.length > 0 ? s : null;
+}
+
+/** The nudge the organizer can paste into the group chat (or that is emailed). */
+export function reminderText(opts: { flowName: string; name: string; owed: number; link: string; deadline?: string }): string {
+  const amount = `$${opts.owed.toFixed(2)}`;
+  const due = opts.deadline ? ` by ${opts.deadline}` : "";
+  return `Hi ${opts.name}, your ${amount} share for ${opts.flowName} is still open. Please pay${due}: ${opts.link}`;
 }

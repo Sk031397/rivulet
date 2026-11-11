@@ -127,6 +127,7 @@ export interface DraftPayout {
   note: string;
   condition?: string | null;
   recipient?: string | null;
+  releaseOn?: string | null;
 }
 
 export interface FlowDraft {
@@ -140,7 +141,25 @@ export interface CleanDraft {
   name: string;
   summary: string;
   goal: number;
-  payouts: Array<{ label: string; amount: number; note: string; condition?: string; recipient?: string }>;
+  payouts: Array<{
+    label: string;
+    amount: number;
+    note: string;
+    condition?: string;
+    recipient?: string;
+    releaseOn?: string;
+  }>;
+}
+
+/** Why a release date can't be used, or null if it's fine (a real date, today or later, within 2 years). */
+function releaseDateProblem(raw: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "releaseOn must be a date written YYYY-MM-DD.";
+  const t = Date.parse(`${raw}T00:00:00.000Z`);
+  if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== raw) return "releaseOn must be a real calendar date.";
+  const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  if (t < today) return "releaseOn is in the past — omit it or choose today or a later date.";
+  if (t - today > 2 * 366 * 86_400_000) return "releaseOn is more than two years away.";
+  return null;
 }
 
 const toCents = (n: number) => Math.round(n * 100);
@@ -224,7 +243,11 @@ export function validateDraft(
     const label = (p.label ?? "").trim().slice(0, 60);
     const where = label ? `payout "${label}"` : `payout #${i + 1}`;
     if (!label) errors.push(`payout #${i + 1} needs a label.`);
-    else if (seenLabels.has(label.toLowerCase())) errors.push(`payout labels must be unique ("${label}" is repeated).`);
+    else if (isContributorLabel(label)) {
+      errors.push(
+        `${where} names a contributor. Payouts are the people or businesses RECEIVING the money (the villa host, the airline, the restaurant) — not the people paying in. Use one payout per payee the user named.`,
+      );
+    } else if (seenLabels.has(label.toLowerCase())) errors.push(`payout labels must be unique ("${label}" is repeated).`);
     seenLabels.add(label.toLowerCase());
 
     const cents = toCents(Number(p.amount));
@@ -248,11 +271,25 @@ export function validateDraft(
     // from a model doesn't become a condition that blocks payout.
     const condition = isBlankRecipient(p.condition) ? "" : (p.condition ?? "").trim().slice(0, 140);
 
+    // A release date makes the condition automatic: the app can check a date itself.
+    // If the model wrote the date into the condition or note instead of releaseOn,
+    // promote it (the agent still checks the date came from the user's request).
+    let releaseOn: string | undefined;
+    if (!isBlankRecipient(p.releaseOn)) {
+      const raw = String(p.releaseOn).trim();
+      const problem = releaseDateProblem(raw);
+      if (problem) errors.push(`${where}: ${problem}`);
+      else releaseOn = raw;
+    } else {
+      const found = datesInText(`${condition} ${p.note ?? ""}`).find((d) => releaseDateProblem(d) === null);
+      if (found) releaseOn = found;
+    }
+
     clean.push({
       label,
       amount: Number.isFinite(cents) ? cents / 100 : 0,
       note: (p.note ?? "").trim().slice(0, 140) || DEFAULT_PAYOUT_NOTE,
-      ...(condition ? { condition } : {}),
+      ...(releaseOn ? { condition: condition || `Released on ${releaseOn}`, releaseOn } : condition ? { condition } : {}),
       ...(recipient ? { recipient } : {}),
     });
   });
@@ -271,4 +308,151 @@ export function validateDraft(
 
   if (errors.length > 0) return { ok: false, errors, ...(fatal ? { fatal: true } : {}) };
   return { ok: true, draft: { name, summary, goal: goalCents / 100, payouts: clean }, warnings };
+}
+
+/* ─── dates the user typed ───────────────────────────────────────────── */
+
+const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const NAMED_DATE = new RegExp(`\\b(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\b|\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?(?:${MONTHS})\\b`, "i");
+
+/**
+ * Computed in code: if the user typed a date, make sure the flow actually has a
+ * deadline or a scheduled payout for it. A small model can quietly drop a date
+ * (or say it scheduled something it didn't), so we say so instead.
+ */
+export function dateWarnings(
+  prompt: string,
+  flow: { deadline?: string; payouts: Array<{ label: string; releaseOn?: string; condition?: string }> },
+): string[] {
+  const out: string[] = [];
+  const used = new Set<string>([flow.deadline, ...flow.payouts.map((p) => p.releaseOn)].filter((d): d is string => !!d));
+  const today = new Date().toISOString().slice(0, 10);
+
+  // The user asked for money to be held until something happens, but nothing is.
+  if (conditionRequested(prompt) && !flow.payouts.some((p) => p.condition || p.releaseOn)) {
+    out.push(
+      "Your request suggests some money should wait for something to happen, but no payout has a release condition. As built, every payout is sent as soon as the goal is met.",
+    );
+  }
+
+  for (const iso of new Set(prompt.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? [])) {
+    if (used.has(iso)) continue;
+    out.push(
+      iso < today
+        ? `You mentioned ${iso}, which has already passed, so nothing is scheduled for it.`
+        : `You mentioned ${iso}, but no payout or deadline in this flow uses that date. Check the flow before sharing it.`,
+    );
+  }
+
+  // A date written out ("March 3"): we can't always tell if it was a deadline or a
+  // payout date, so only flag the case where the flow has no date at all.
+  if (out.length === 0 && NAMED_DATE.test(prompt) && used.size === 0) {
+    out.push("You mentioned a date, but this flow has no deadline or scheduled payout. Check whether you need one.");
+  }
+  return out;
+}
+
+/* ─── keeping the model to what the user actually said ───────────────── */
+
+const MONTH_NUM: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** Month/day pairs written out in the prompt ("March 3", "3rd of March"). */
+function namedDatesIn(prompt: string): Array<{ month: number; day: number }> {
+  const out: Array<{ month: number; day: number }> = [];
+  const m = `(${MONTHS})`;
+  const monthFirst = new RegExp(`\\b${m}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "gi");
+  const dayFirst = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${m}\\b`, "gi");
+  for (const x of prompt.matchAll(monthFirst)) out.push({ month: MONTH_NUM[x[1].slice(0, 3).toLowerCase()], day: Number(x[2]) });
+  for (const x of prompt.matchAll(dayFirst)) out.push({ month: MONTH_NUM[x[2].slice(0, 3).toLowerCase()], day: Number(x[1]) });
+  return out;
+}
+
+const DAY_NAME = "(?:mon|tues|wednes|thurs|fri|satur|sun)day";
+const COUNT = "(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)";
+const RELATIVE_TIME = new RegExp(
+  [
+    "\\b(?:today|tomorrow|tonight)\\b",
+    `\\b(?:this|next)\\s+(?:week|weekend|month|year|${DAY_NAME})\\b`,
+    `\\b(?:within|in|after|before)\\s+${COUNT}\\s+(?:days?|weeks?|months?)\\b`,
+    `\\b${COUNT}\\s+(?:days?|weeks?|months?)\\s+(?:from now|before|after|later)\\b`,
+    `\\bby\\s+(?:the\\s+)?(?:${DAY_NAME}|weekend|end of)\\b`,
+    "\\bend of (?:the )?(?:week|month|year)\\b",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * Whether a date the model chose can be traced back to what the user wrote: the
+ * same ISO date, the same month and day written out, or a relative phrase ("in
+ * two weeks", "by Friday") that we can't check precisely but that is theirs.
+ * Stops the model from inventing a deadline or a payout date.
+ */
+export function dateGrounded(prompt: string, iso: string): boolean {
+  if (prompt.includes(iso)) return true;
+  const month = Number(iso.slice(5, 7));
+  const day = Number(iso.slice(8, 10));
+  if (namedDatesIn(prompt).some((d) => d.month === month && d.day === day)) return true;
+  return RELATIVE_TIME.test(prompt);
+}
+
+/** Whether the request says money should wait for something to happen. */
+export function conditionRequested(prompt: string): boolean {
+  return /\b(once|after|when|whenever|until|upon|unless|verif\w*|confirm\w*|approv\w*|released?|only if|provided)\b/i.test(prompt);
+}
+
+/**
+ * The group size the user stated ("6 people", "for 8 friends", "5 of us", "me and
+ * 2 friends"), or null. Read in code because the model sometimes skips it.
+ */
+export function groupSizeFromPrompt(prompt: string): number | null {
+  // "me and 2 friends" is 3 people, so check that form before the general one.
+  const meAnd = /\b(?:me|myself|i)\s+and\s+(\d{1,3})\s+(?:other\s+)?(?:friends?|people|others?)\b/i.exec(prompt);
+  if (meAnd) return Number(meAnd[1]) + 1;
+  const direct = /\b(\d{1,3})\s+(?:people|persons|friends|guys|adults|of us|travell?ers|members)\b/i.exec(prompt);
+  if (direct) return Number(direct[1]);
+  return null;
+}
+
+/** Labels that name a contributor, not who gets paid ("Person 1", "Friend 2"). */
+export function isContributorLabel(label: string): boolean {
+  return /^(person|participant|member|contributor|friend|payee|recipient|guest|attendee)\s*#?\s*\d+$/i.test(label.trim());
+}
+
+/** A written-out month and day as the next YYYY-MM-DD on or after today, or null if not a real date. */
+function resolveNamedDate(d: { month: number; day: number }, now: Date = new Date()): string | null {
+  const today = now.toISOString().slice(0, 10);
+  for (const year of [now.getUTCFullYear(), now.getUTCFullYear() + 1]) {
+    const iso = `${year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+    const t = Date.parse(`${iso}T00:00:00.000Z`);
+    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== iso) return null;
+    if (iso >= today) return iso;
+  }
+  return null;
+}
+
+/** Every date written in the text: ISO dates as-is, written-out dates as their next occurrence. */
+export function datesInText(text: string): string[] {
+  const out = new Set<string>(text.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? []);
+  for (const d of namedDatesIn(text)) {
+    const iso = resolveNamedDate(d);
+    if (iso) out.add(iso);
+  }
+  return [...out];
+}
+
+/**
+ * A payment deadline the user stated outright ("pay by December 5", "before
+ * 2026-12-05"), or null. Read in code because the model sometimes skips it.
+ * Only "by / before / until / no later than" count, so a payout date ("pay the
+ * host on March 3") is never mistaken for a deadline.
+ */
+export function deadlineFromPrompt(prompt: string): string | null {
+  const m = new RegExp(
+    `\\b(?:by|before|until|no later than)\\s+((?:\\d{4}-\\d{2}-\\d{2})|(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?(?:${MONTHS}))\\b`,
+    "i",
+  ).exec(prompt);
+  if (!m) return null;
+  return datesInText(m[1])[0] ?? null;
 }
