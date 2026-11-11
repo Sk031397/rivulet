@@ -11,9 +11,11 @@ import {
   ModuleRegistry,
   AllCommunityModule,
   ValidationModule,
-  themeQuartz,
+  type GetRowIdParams,
 } from "ag-grid-community";
 import PageHeader from "@/components/dashboard/PageHeader";
+import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
+import { setPinnedTotals, sumMoney, compareDisplayDates, dateFilterComparator } from "@/lib/gridHelpers";
 import { type Payment, type PaymentStatus } from "@/data/dashboard";
 
 // Register everything available in Community edition
@@ -42,22 +44,30 @@ function AmountCell({ value, data }: { value: number; data: Payment }) {
   );
 }
 
-function DirectionCell({ data }: { data: Payment }) {
+function DirectionCell({ data, node }: { data: Payment; node?: { rowPinned?: string | null } }) {
+  if (node?.rowPinned) return null; // totals row
   const isIn = data?.direction === "in";
   const Icon = isIn ? ArrowDownLeft : ArrowUpRight;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-      isIn ? "bg-mint/25 text-emerald-800" : "bg-ultra/10 text-ultra"
-    }`}>
-      <Icon className="size-3" /> {isIn ? "In" : "Out"}
+    // Wrapper centers the pill vertically; without it the flex pill stretches to the row height.
+    // leading-4 on the pill: AG Grid gives cells a row-height line-height, which a flex pill would inherit as its own height.
+    <span className="flex h-full items-center">
+      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold leading-4 ${
+        isIn ? "bg-mint/25 text-emerald-800" : "bg-ultra/10 text-ultra"
+      }`}>
+        <Icon className="size-3" /> {isIn ? "In" : "Out"}
+      </span>
     </span>
   );
 }
 
-function StatusCell({ value }: { value: PaymentStatus }) {
+function StatusCell({ value, node }: { value: PaymentStatus; node?: { rowPinned?: string | null } }) {
+  if (node?.rowPinned) return null; // totals row
   return (
-    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold capitalize ${STATUS_STYLE[value] ?? ""}`}>
-      {value}
+    <span className="flex h-full items-center">
+      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold capitalize leading-4 ${STATUS_STYLE[value] ?? ""}`}>
+        {value}
+      </span>
     </span>
   );
 }
@@ -249,9 +259,12 @@ export default function PaymentsPage() {
     {
       field: "date",
       headerName: "Date",
-      width: 130,
+      width: 150,
       sortable: true,
       filter: "agDateColumnFilter",
+      // Dates arrive as "Nov 10, 2026" strings: sort and filter them as dates.
+      comparator: compareDisplayDates,
+      filterParams: { comparator: dateFilterComparator },
       pinned: "left",
     },
     {
@@ -309,15 +322,41 @@ export default function PaymentsPage() {
     resizable: true,
     suppressMovable: false,
     floatingFilter: true, // per-column filter inputs shown below headers
+    // Live polling: a cell whose value changed glows briefly.
+    enableCellChangeFlash: true,
   }), []);
+
+  /** Stable ids let polling update rows in place instead of replacing the table. */
+  const getRowId = useCallback((p: GetRowIdParams<Payment>) => p.data.id, []);
+
+  /** Net total of the payments that pass the current filters. */
+  const refreshTotals = useCallback(() => {
+    if (!gridApi.current) return;
+    setPinnedTotals(gridApi.current, (rows) => {
+      const net = sumMoney(rows.map((r) => (r.direction === "in" ? r.amount : -r.amount)));
+      return {
+        id: "__totals",
+        flow: `Net of ${rows.length} payment${rows.length === 1 ? "" : "s"}`,
+        who: "",
+        // The amount cell derives its sign and color from direction.
+        direction: (net >= 0 ? "in" : "out") as Payment["direction"],
+        amount: Math.abs(net),
+        date: "",
+        method: "",
+        status: "completed" as const,
+      };
+    });
+  }, []);
 
   const onGridReady = useCallback((e: GridReadyEvent<Payment>) => {
     gridApi.current = e.api;
     e.api.sizeColumnsToFit();
     e.api.setGridOption("paginationPageSize", pageSize);
-  }, [pageSize]);
+    refreshTotals();
+  }, [pageSize, refreshTotals]);
 
   const onRowClicked = useCallback((e: RowClickedEvent<Payment>) => {
+    if (e.node.rowPinned) return; // the totals row isn't a payment
     if (e.data) setSelected(e.data);
   }, []);
 
@@ -340,6 +379,7 @@ export default function PaymentsPage() {
           type="button"
           onClick={() => gridApi.current?.exportDataAsCsv({
             fileName: `rivulet-payments-${new Date().toISOString().slice(0, 10)}.csv`,
+            skipPinnedBottom: true, // the totals row isn't a payment
           })}
           disabled={rows.length === 0}
           className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-ink shadow-sm ring-1 ring-ink/10 transition hover:ring-ultra disabled:opacity-50 disabled:cursor-not-allowed"
@@ -458,19 +498,22 @@ export default function PaymentsPage() {
             rowData={rows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
-            theme={themeQuartz}
+            theme={rivuletTheme}
+            getRowId={getRowId}
+            {...LIVE_GRID_OPTIONS}
             onGridReady={onGridReady}
             onRowClicked={onRowClicked}
+            onRowDataUpdated={refreshTotals}
+            onFilterChanged={refreshTotals}
             /* pagination */
             pagination={true}
             paginationPageSize={pageSize}
             paginationPageSizeSelector={false}
             /* row selection */
-            rowSelection={{ mode: "singleRow" }}
+            rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: true }}
             /* quick filter */
             quickFilterText={quickFilter}
             /* misc */
-            animateRows={true}
             rowHeight={52}
             headerHeight={44}
             rowClass="cursor-pointer"

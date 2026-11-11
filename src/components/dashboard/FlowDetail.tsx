@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, Clock, Lock, Users, Copy, X, ExternalLink, Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import StatusPill from "./StatusPill";
+import { TripFacts, PayoutIssues } from "./TripControls";
 import type { Flow, PayoutState } from "@/data/dashboard";
 
 const STATE: Record<PayoutState, { icon: LucideIcon; label: string; chip: string; icon_bg: string }> = {
@@ -92,6 +93,7 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
   const [saving, setSaving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState("");
   const [approveResult, setApproveResult] = useState<ApproveResponse["payouts"] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -142,6 +144,11 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
         <StatusPill status={flow.status} />
       </div>
 
+      <div className="mt-4 space-y-3">
+        <TripFacts flow={flow} />
+        <PayoutIssues flow={flow} />
+      </div>
+
       <div className="mx-auto mt-6 w-52 rounded-2xl bg-ink p-4 text-center text-white shadow-lg shadow-ink/25">
         <Users className="mx-auto size-5 text-saffron" />
         <p className="mt-1 text-xs font-semibold text-white/75">Collected</p>
@@ -167,6 +174,11 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
               <p className="mt-3 text-sm font-bold text-ink">{p.label}</p>
               <p className="text-xl font-extrabold text-ink">${p.amount}</p>
               <p className="mt-1 text-xs leading-snug text-ink/65">{p.note}</p>
+              {p.condition && p.state !== "paid" && (
+                <p className="mt-2 rounded-lg bg-saffron/25 px-2 py-1 text-[11px] font-semibold text-amber-900">
+                  Release condition: {p.condition}
+                </p>
+              )}
               {p.recipient && (
                 <p className="mt-2 truncate rounded-lg bg-ultra/10 px-2 py-1 text-[11px] font-mono text-ultra">
                   &#8594; {p.recipient}
@@ -205,6 +217,7 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
             disabled={approving}
             onClick={async () => {
               setApproving(true);
+              setApproveError("");
               try {
                 const res = await fetch("/api/flows/approve", {
                   method: "POST",
@@ -212,11 +225,17 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
                   body: JSON.stringify({ flowId: flow.id }),
                 });
                 const data = (await res.json()) as ApproveResponse;
-                setApproveResult(data.payouts ?? null);
-              } catch { /* the next /api/flows poll reconciles the status */ }
-              finally {
+                if (!res.ok) {
+                  // e.g. a payout is already running, or the flow isn't funded.
+                  setApproveError(data.error ?? "Could not approve payouts.");
+                } else {
+                  setApproveResult(data.payouts ?? null);
+                  setApproved(true);
+                }
+              } catch {
+                setApproveError("Network error — check the Payments page before retrying.");
+              } finally {
                 setApproving(false);
-                setApproved(true);
               }
             }}
             className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra disabled:opacity-60 disabled:cursor-not-allowed"
@@ -226,6 +245,11 @@ export default function FlowDetail({ flow, onDelete, onRename }: { flow: Flow; o
               : <><Check className="size-4" /> Approve payouts</>
             }
           </button>
+        )}
+        {approveError && (
+          <p role="alert" className="w-full rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
+            {approveError}
+          </p>
         )}
         {approved && (
           <span className="inline-flex items-center gap-2 rounded-full bg-mint/25 px-5 py-2.5 text-sm font-bold text-emerald-700">

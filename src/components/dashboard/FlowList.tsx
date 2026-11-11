@@ -29,7 +29,7 @@ export default function FlowList({ flows, selectedId, onSelect }: { flows: Flow[
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/10">
                   <div
-                    className={`h-full rounded-full ${pct === 100 ? "bg-mint" : "bg-gradient-to-r from-ultra to-coral"}`}
+                    className={`h-full rounded-full ${pct === 100 ? "bg-mint" : "bg-linear-to-r from-ultra to-coral"}`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>

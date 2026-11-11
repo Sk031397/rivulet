@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * A single address-book entry. The address is either an email or a phone
@@ -116,7 +116,9 @@ export function useAddressBook() {
     });
   }, []);
 
-  const contacts = mergeContacts(saved, flowContacts);
+  // Memoized: consumers (e.g. AG Grid column definitions) must not see a new array
+  // on every render, or they rebuild — which also wipes a grid's undo history.
+  const contacts = useMemo(() => mergeContacts(saved, flowContacts), [saved, flowContacts]);
 
   return { contacts, addContact };
 }

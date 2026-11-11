@@ -16,6 +16,7 @@ export const FlowSchema = z.object({
         amount: z.number().nonnegative(),
         state: z.enum(["paid", "pending", "locked"]),
         note: z.string().max(140),
+        condition: z.string().max(140).optional(),
         recipient: z.string().max(200).nullable().optional(),
       }),
     )
@@ -53,6 +54,7 @@ export function toDashboardFlow(plan: FlowPlan, ownerId: string): Flow {
     collected: 0,
     goal: plan.goal,
     contributors: 0,
+    contributions: [],
     payouts: plan.payouts.map((p, i) => ({
       // Stable per-payout id so recipient edits can't be misassigned by label.
       id: `${flowId}-p${i}`,
@@ -60,6 +62,7 @@ export function toDashboardFlow(plan: FlowPlan, ownerId: string): Flow {
       amount: p.amount,
       state: p.state,
       note: p.note,
+      ...(p.condition ? { condition: p.condition } : {}),
       ...(p.recipient ? { recipient: p.recipient } : {}),
     })),
     resources: plan.resources ?? [],

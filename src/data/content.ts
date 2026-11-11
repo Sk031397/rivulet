@@ -1,11 +1,11 @@
 import {
   Zap, DoorOpen, Waves, GitFork, Lock,
-  Users, Music2, Plane, Heart,
+  Home, Plane, Mountain, PartyPopper,
   MessageCircle, Wand2, CircleCheck,
   type LucideIcon,
 } from "lucide-react";
 
-export const BRAND = { name: "Rivulet", tagline: "Let money find its way." } as const;
+export const BRAND = { name: "Rivulet", tagline: "The group trip, paid for." } as const;
 
 export interface Feature {
   icon: LucideIcon;
@@ -15,11 +15,11 @@ export interface Feature {
 }
 
 export const FEATURES: Feature[] = [
-  { icon: Zap, tone: "bg-ultra/10 text-ultra", title: "Skip", text: "Send money to anyone, even if they have no account." },
-  { icon: DoorOpen, tone: "bg-coral/15 text-coral", title: "Doorway", text: "Turn a link or QR code into a place people can pay." },
-  { icon: Waves, tone: "bg-mint/25 text-emerald-700", title: "Trickle", text: "Pay a little at a time, from minutes to milestones." },
-  { icon: GitFork, tone: "bg-saffron/30 text-amber-700", title: "Fork", text: "Split one payment into several payouts automatically." },
-  { icon: Lock, tone: "bg-ink/10 text-ink", title: "Hold", text: "Set conditions. Release funds only when they’re met." },
+  { icon: Zap, tone: "bg-ultra/10 text-ultra", title: "Say the trip", text: "Describe it in a sentence: who is going, what it costs, and when everyone has to pay." },
+  { icon: DoorOpen, tone: "bg-coral/15 text-coral", title: "One link", text: "Friends pay their share through PayPal. No app, no chasing people in the group chat." },
+  { icon: Waves, tone: "bg-mint/25 text-emerald-700", title: "See who is in", text: "Watch shares come in, with what is still outstanding and the days left to pay." },
+  { icon: GitFork, tone: "bg-saffron/30 text-amber-700", title: "Pay the vendors", text: "When the pot is full, the villa, the flights and the dinner are paid straight from it." },
+  { icon: Lock, tone: "bg-ink/10 text-ink", title: "Money back", text: "If the trip falls through or the deadline passes, everyone is refunded through PayPal." },
 ];
 
 export interface UseCase {
@@ -31,10 +31,10 @@ export interface UseCase {
 }
 
 export const USE_CASES: UseCase[] = [
-  { icon: Users, title: "Community events", text: "Fund, organize, and reward.", img: "/images/community.jpg", fallback: "from-emerald-600 to-saffron" },
-  { icon: Music2, title: "Creators & artists", text: "Split earnings, grow together.", img: "/images/creators.jpg", fallback: "from-ink to-ultra" },
-  { icon: Plane, title: "Travel groups", text: "Collect, split, and book.", img: "/images/travel.jpg", fallback: "from-coral to-ultra" },
-  { icon: Heart, title: "Charity & impact", text: "Automate donations.", img: "/images/charity.jpg", fallback: "from-ultra to-mint" },
+  { icon: Home, title: "House rentals", text: "Deposit now, balance later.", img: "/images/house.jpg", fallback: "from-emerald-600 to-saffron" },
+  { icon: Mountain, title: "Ski & road trips", text: "Lodging, lifts and fuel.", img: "/images/ski.jpg", fallback: "from-ink to-ultra" },
+  { icon: Plane, title: "Group flights", text: "Reimburse whoever booked.", img: "/images/travel.jpg", fallback: "from-coral to-ultra" },
+  { icon: PartyPopper, title: "Party weekends", text: "Hotel, activities, dinner.", img: "/images/party.jpg", fallback: "from-ultra to-mint" },
 ];
 
 export interface Step {
@@ -44,7 +44,7 @@ export interface Step {
 }
 
 export const STEPS: Step[] = [
-  { icon: MessageCircle, title: "Say what you need", text: "“Collect $1,000 for a neighborhood cleanup and reward volunteers.”" },
-  { icon: Wand2, title: "Review the flow", text: "AI maps who pays, who gets paid, and when. Adjust anything." },
-  { icon: CircleCheck, title: "Watch it run", text: "Track every payment and payout as the flow executes." },
+  { icon: MessageCircle, title: "Say what you need", text: "“Lisbon for 6 friends: $1,800 for flights and $2,400 for the villa, everyone pays by March 1.”" },
+  { icon: Wand2, title: "Review the flow", text: "AI works out each person’s share, who gets paid and the deadline. Adjust anything." },
+  { icon: CircleCheck, title: "Watch it run", text: "Share the link, watch shares come in, and payouts go out when the pot is full." },
 ];

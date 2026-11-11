@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, Clock } from "lucide-react";
+import { Sparkles, Clock, Search, ShieldCheck, Wand2, AlertTriangle } from "lucide-react";
 import { SUGGESTIONS, type Flow } from "@/data/dashboard";
+import { useAddressBook } from "@/lib/addressBook";
+import type { AgentStep } from "@/lib/agent";
 
 interface BuildResponse {
   flow?: Flow;
   error?: string;
   message?: string;
-  mode?: "paypal";
   retryAfter?: number;
+  steps?: AgentStep[];
+  warnings?: string[];
 }
+
+const STEP_ICON = { find_contacts: Search, check_recipient: ShieldCheck, create_flow: Wand2 } as const;
 
 export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void }) {
   const [text, setText]       = useState("");
@@ -18,6 +23,10 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const [error, setError]     = useState("");
   const [mode, setMode]       = useState("");
   const [countdown, setCountdown] = useState(0); // seconds remaining on rate-limit
+  const [steps, setSteps]       = useState<AgentStep[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  // Saved + past-recipient contacts, so the agent can resolve "pay Maya" to an address.
+  const { contacts } = useAddressBook();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* pre-fill from "Use template" */
@@ -54,14 +63,22 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
     setBuilding(true);
     setError("");
     setMode("");
+    setSteps([]);
+    setWarnings([]);
     try {
       const res = await fetch("/api/build-flow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text.trim() }),
+        body: JSON.stringify({
+          prompt: text.trim(),
+          contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
+        }),
       });
 
       const data = (await res.json()) as BuildResponse;
+      // Show what the agent did even when it couldn't finish.
+      setSteps(data.steps ?? []);
+      setWarnings(data.warnings ?? []);
 
       /* rate limit — show countdown */
       if (res.status === 429) {
@@ -75,7 +92,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       if (!data.flow) throw new Error(data.error ?? "No flow returned");
 
       onBuild?.(data.flow);
-      setMode("✓ Flow built · live PayPal order created");
+      setMode("✓ Flow created — share its pay link from the Flows page.");
     } catch (e) {
       setError((e as Error).message ?? "Something went wrong");
     } finally {
@@ -131,6 +148,41 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         ) : mode ? (
           <p className="font-semibold text-emerald-700">{mode}</p>
         ) : null}
+      </div>
+
+      {/* What the agent did, step by step */}
+      <div aria-live="polite">
+        {warnings.length > 0 && (
+          <ul className="mt-2 space-y-1.5 rounded-2xl bg-saffron/20 p-3 ring-1 ring-saffron/40">
+            {warnings.map((w) => (
+              <li key={w} className="flex items-start gap-2 text-sm font-semibold text-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" /> <span>{w}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {steps.length > 0 && (
+          <div className="mt-3 rounded-2xl bg-paper p-4 ring-1 ring-ink/5">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50">What the assistant did</p>
+            <ol className="mt-2 space-y-1.5">
+              {steps.map((s, i) => {
+                const Icon = STEP_ICON[s.tool];
+                // A lookup that finds nothing is normal, not an error; a rejected
+                // plan is something the assistant then fixes.
+                const tone = s.ok
+                  ? "text-ink/80"
+                  : s.tool === "find_contacts"
+                    ? "text-ink/45"
+                    : "text-amber-800";
+                return (
+                  <li key={i} className={`flex items-start gap-2 text-sm ${tone}`}>
+                    <Icon className="mt-0.5 size-4 shrink-0" /> <span>{s.summary}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">

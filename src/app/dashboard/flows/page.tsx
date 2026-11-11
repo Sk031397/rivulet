@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Check, Clock, Lock, Copy, ExternalLink, Loader2, Search } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Plus, X, Check, Copy, ExternalLink, Loader2, Search } from "lucide-react";
 import { AgGridReact } from "ag-grid-react";
 import {
   type ColDef,
@@ -13,28 +12,24 @@ import {
   ModuleRegistry,
   AllCommunityModule,
   ValidationModule,
-  themeQuartz,
+  type GetRowIdParams,
 } from "ag-grid-community";
 import PageHeader from "@/components/dashboard/PageHeader";
 import StatusPill from "@/components/dashboard/StatusPill";
-import RecipientAutocomplete from "@/components/dashboard/RecipientAutocomplete";
 import AutocompleteFloatingFilter from "@/components/dashboard/AutocompleteFloatingFilter";
-import { useAddressBook } from "@/lib/addressBook";
-import { type Flow, type FlowStatus, type PayoutState } from "@/data/dashboard";
+import PayoutsGrid, { newEditGuard, isEditGuardActive, type EditGuard } from "@/components/dashboard/PayoutsGrid";
+import { TripFacts, PayoutIssues, RefundControl } from "@/components/dashboard/TripControls";
+import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
+import { setPinnedTotals, sumMoney } from "@/lib/gridHelpers";
+import { type Flow, type FlowStatus } from "@/data/dashboard";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 const money = (n: number) => `$${n.toLocaleString()}`;
 
-const FILTERS = ["All", "Collecting", "Needs approval", "Paid out"] as const;
+const FILTERS = ["All", "Collecting", "Needs approval", "Paid out", "Refunded"] as const;
 type FlowFilter = (typeof FILTERS)[number];
-
-const STATE: Record<PayoutState, { icon: LucideIcon; label: string; chip: string; icon_bg: string }> = {
-  paid:    { icon: Check, label: "Paid",    chip: "bg-mint/25 text-emerald-800",  icon_bg: "bg-mint text-ink"    },
-  pending: { icon: Clock, label: "Pending", chip: "bg-saffron/30 text-amber-800", icon_bg: "bg-saffron text-ink" },
-  locked:  { icon: Lock,  label: "On hold", chip: "bg-ink/10 text-ink",           icon_bg: "bg-ink text-white"   },
-};
 
 function collectLink(flowId: string) {
   const base = typeof window !== "undefined" ? window.location.origin : "https://rivulet.app";
@@ -42,7 +37,8 @@ function collectLink(flowId: string) {
 }
 
 /* ── AG Grid cell renderers ──────────────────────────────────────────── */
-function StatusCell({ value }: { value: FlowStatus }) {
+function StatusCell({ value, node }: { value: FlowStatus; node?: { rowPinned?: string | null } }) {
+  if (node?.rowPinned) return null; // totals row
   return <StatusPill status={value} />;
 }
 
@@ -51,7 +47,7 @@ function ProgressCell({ data }: { data: Flow }) {
   const pct = Math.min(100, Math.round((data.collected / data.goal) * 100));
   const funded = data.collected >= data.goal;
   return (
-    <div className="flex w-full items-center gap-2">
+    <div className="flex h-full w-full items-center gap-2">
       <div className="flex-1 h-2 overflow-hidden rounded-full bg-ink/10">
         <div
           className={`h-full rounded-full ${funded ? "bg-mint" : "bg-gradient-to-r from-ultra to-coral"}`}
@@ -72,8 +68,8 @@ function CollectedCell({ data }: { data: Flow }) {
   );
 }
 
-function PayoutsCell({ data }: { data: Flow }) {
-  if (!data) return null;
+function PayoutsCell({ data, node }: { data: Flow; node?: { rowPinned?: string | null } }) {
+  if (!data || node?.rowPinned) return null; // totals row
   const pending = data.payouts.filter((p) => p.state === "pending").length;
   return (
     <span className="text-sm text-ink/70">
@@ -92,6 +88,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
   const [copied, setCopied]           = useState(false);
   const [approved, setApproved]       = useState(false);
   const [approving, setApproving]     = useState(false);
+  const [approveError, setApproveError] = useState("");
   const [approveResult, setApproveResult] = useState<{
     attempted: number; disbursed: number; failed: number;
     results: { label: string; recipient: string; amount: number; ok: boolean; batchId?: string; itemStatus?: string; error?: string }[];
@@ -101,52 +98,16 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
   const [name, setName]               = useState(flow.name);
   const link = collectLink(flow.id);
 
-  // ── payout recipient editing ──────────────────────────────────────
-  const { contacts } = useAddressBook();
-  const [editingRecipients, setEditingRecipients] = useState(false);
-  // keyed by payout label → recipient string
-  const [recipients, setRecipients] = useState<Record<string, string>>({});
-  const [savingRecipients, setSavingRecipients] = useState(false);
-  const [recipientError, setRecipientError] = useState("");
-
-  const startEditingRecipients = () => {
-    const seed: Record<string, string> = {};
-    for (const p of flow.payouts) seed[p.id ?? p.label] = p.recipient ?? "";
-    setRecipients(seed);
-    setRecipientError("");
-    setEditingRecipients(true);
-  };
-
-  const saveRecipients = async () => {
-    if (savingRecipients) return;
-    setSavingRecipients(true);
-    setRecipientError("");
-    try {
-      const payload = flow.payouts.map((p) => ({
-        id: p.id,
-        label: p.label,
-        recipient: (recipients[p.id ?? p.label] ?? "").trim(),
-      }));
-      const res = await fetch(`/api/flows/${encodeURIComponent(flow.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payouts: payload }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Could not save recipients");
-      }
-      refreshFlows();
-      setEditingRecipients(false);
-    } catch (e) {
-      setRecipientError((e as Error).message);
-    } finally {
-      setSavingRecipients(false);
-    }
-  };
+  // Lets the payouts grid tell this panel a cell edit is in progress, so Escape
+  // cancels the edit instead of closing the whole panel.
+  const editGuard = useRef<EditGuard>(newEditGuard());
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (isEditGuardActive(editGuard.current)) return;
+      onClose();
+    };
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
@@ -227,6 +188,9 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
             <p className="mt-1 text-xs text-ink/50">{Math.round((flow.collected / flow.goal) * 100)}% funded</p>
           </div>
 
+          <TripFacts flow={flow} />
+          <PayoutIssues flow={flow} />
+
           {/* collect link */}
           <div className="rounded-2xl bg-paper p-4 ring-1 ring-ink/8">
             <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50 mb-2">Collect link</p>
@@ -243,89 +207,28 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
             </a>
           </div>
 
-          {/* payouts */}
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50">Payouts</p>
-              {editingRecipients ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={saveRecipients}
-                    disabled={savingRecipients}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-ultra px-3 py-1 text-xs font-bold text-white transition hover:bg-ink disabled:opacity-60"
-                  >
-                    {savingRecipients ? <><Loader2 className="size-3 animate-spin" /> Saving…</> : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEditingRecipients(false); setRecipientError(""); }}
-                    className="rounded-full px-2 py-1 text-xs font-bold text-ink/55 hover:text-ink"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startEditingRecipients}
-                  className="rounded-full px-3 py-1 text-xs font-bold text-ultra transition hover:bg-ultra/10"
-                >
-                  Edit recipients
-                </button>
-              )}
-            </div>
-
-            {recipientError && (
-              <p className="mb-2 rounded-xl bg-coral/10 px-3 py-2 text-xs font-semibold text-coral">{recipientError}</p>
-            )}
-
-            <ul className="space-y-2">
-              {flow.payouts.map((p) => {
-                const s = STATE[p.state];
-                const Icon = s.icon;
-                const locked = p.state === "paid";
-                return (
-                  <li key={p.label} className="flex items-start gap-3 rounded-2xl bg-paper p-4">
-                    <span className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${s.icon_bg}`}>
-                      <Icon className="size-4" />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold text-ink truncate">{p.label}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold shrink-0 ${s.chip}`}>{s.label}</span>
-                      </div>
-                      <p className="text-lg font-extrabold text-ink">{money(p.amount)}</p>
-                      <p className="mt-0.5 text-xs leading-snug text-ink/60">{p.note}</p>
-
-                      {editingRecipients ? (
-                        <div className="mt-2">
-                          {locked ? (
-                            <p className="rounded-lg bg-ink/5 px-2 py-1 text-[11px] text-ink/50">
-                              Already paid — recipient locked
-                            </p>
-                          ) : (
-                            <RecipientAutocomplete
-                              value={recipients[p.id ?? p.label] ?? ""}
-                              onChange={(v) => setRecipients((r) => ({ ...r, [p.id ?? p.label]: v }))}
-                              contacts={contacts}
-                              placeholder="Email or phone number"
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        p.recipient && (
-                          <p className="mt-1.5 truncate rounded-lg bg-ultra/10 px-2 py-1 text-[11px] font-mono text-ultra">
-                            &#8594; {p.recipient}
-                          </p>
-                        )
-                      )}
+          {/* contributions */}
+          {flow.contributions && flow.contributions.length > 0 && (
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50 mb-3">
+                Contributions ({flow.contributions.length})
+              </p>
+              <ul className="space-y-2">
+                {[...flow.contributions].reverse().map((c) => (
+                  <li key={c.id} className="flex items-center justify-between gap-3 rounded-2xl bg-paper px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{c.payer ?? "Contributor"}</p>
+                      <p className="text-[11px] text-ink/50">{new Date(c.at).toLocaleString()}</p>
                     </div>
+                    <span className="shrink-0 font-extrabold tabular-nums text-emerald-700">+{money(c.amount)}</span>
                   </li>
-                );
-              })}
-            </ul>
-          </div>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* payouts: editable AG Grid */}
+          <PayoutsGrid flowId={flow.id} payouts={flow.payouts} refreshFlows={refreshFlows} editGuard={editGuard} />
 
           {/* PayPal resources */}
           {flow.resources && flow.resources.length > 0 && (
@@ -346,6 +249,13 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* approve error */}
+          {approveError && (
+            <p role="alert" className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
+              {approveError}
+            </p>
           )}
 
           {/* approve results */}
@@ -381,16 +291,27 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
             <button type="button" disabled={approving}
               onClick={async () => {
                 setApproving(true);
+                setApproveError("");
                 try {
                   const res = await fetch("/api/flows/approve", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ flowId: flow.id }),
                   });
-                  const data = await res.json() as { payouts?: typeof approveResult };
-                  setApproveResult(data.payouts ?? null);
-                } catch { /* poll reconciles */ }
-                finally { setApproving(false); setApproved(true); }
+                  const data = await res.json() as { payouts?: typeof approveResult; error?: string };
+                  if (!res.ok) {
+                    // e.g. a payout is already running, or the flow isn't funded.
+                    setApproveError(data.error ?? "Could not approve payouts.");
+                  } else {
+                    setApproveResult(data.payouts ?? null);
+                    setApproved(true);
+                  }
+                } catch {
+                  setApproveError("Network error — check the Payments page before retrying.");
+                } finally {
+                  setApproving(false);
+                  refreshFlows();
+                }
               }}
               className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-white transition hover:bg-ultra disabled:opacity-60 disabled:cursor-not-allowed">
               {approving ? <><Loader2 className="size-4 animate-spin" /> Sending payouts…</> : <><Check className="size-4" /> Approve payouts</>}
@@ -401,6 +322,7 @@ function FlowPanel({ flow, onClose, onDelete, refreshFlows }: {
               <Check className="size-4" /> Approved
             </span>
           )}
+          <RefundControl flow={flow} onDone={refreshFlows} />
           <button type="button" onClick={copyLink}
             className="inline-flex items-center gap-2 rounded-full bg-ultra/10 px-5 py-2.5 text-sm font-bold text-ultra transition hover:bg-ultra hover:text-white">
             <Copy className="size-4" /> {copied ? "Copied!" : "Share link"}
@@ -435,8 +357,11 @@ export default function FlowsPage() {
 
   const [flows, setFlows]         = useState<Flow[]>([]);
   const [filter, setFilter]       = useState<FlowFilter>("All");
-  const [openFlow, setOpenFlow]   = useState<Flow | null>(null);
+  const [openFlowId, setOpenFlowId] = useState<string | null>(null);
   const [quickFilter, setQuick]   = useState("");
+  // Derive from the live list (not a click-time snapshot) so the panel reflects
+  // saved recipient edits, new contributions, and payout results as they happen.
+  const openFlow = openFlowId ? flows.find((f) => f.id === openFlowId) ?? null : null;
 
   const refreshFlows = useCallback(() => {
     fetch("/api/flows")
@@ -526,15 +451,36 @@ export default function FlowsPage() {
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: false,
+    // Live polling: a cell whose value changed glows briefly.
+    enableCellChangeFlash: true,
   }), []);
+
+  /** Stable ids let polling update rows in place instead of replacing the table. */
+  const getRowId = useCallback((p: GetRowIdParams<Flow>) => p.data.id, []);
+
+  /** Totals across the rows that pass the current filters. */
+  const refreshTotals = useCallback(() => {
+    if (!gridApi.current) return;
+    setPinnedTotals(gridApi.current, (rows) => ({
+      id: "__totals",
+      name: `Total · ${rows.length} flow${rows.length === 1 ? "" : "s"}`,
+      status: "Collecting" as const, // not rendered on the totals row
+      collected: sumMoney(rows.map((r) => r.collected)),
+      goal: sumMoney(rows.map((r) => r.goal)),
+      contributors: rows.reduce((s, r) => s + r.contributors, 0),
+      payouts: [],
+    }));
+  }, []);
 
   const onGridReady = useCallback((e: GridReadyEvent<Flow>) => {
     gridApi.current = e.api;
     e.api.sizeColumnsToFit();
-  }, []);
+    refreshTotals();
+  }, [refreshTotals]);
 
   const onRowClicked = useCallback((e: RowClickedEvent<Flow>) => {
-    if (e.data) setOpenFlow(e.data);
+    if (e.node.rowPinned) return; // the totals row isn't a flow
+    if (e.data) setOpenFlowId(e.data.id);
   }, []);
 
   const goToNewFlow = () => {
@@ -607,11 +553,14 @@ export default function FlowsPage() {
                   rowData={rows}
                   columnDefs={colDefs}
                   defaultColDef={defaultColDef}
-                  theme={themeQuartz}
+                  theme={rivuletTheme}
+                  getRowId={getRowId}
+                  {...LIVE_GRID_OPTIONS}
                   onGridReady={onGridReady}
                   onRowClicked={onRowClicked}
-                  rowSelection={{ mode: "singleRow" }}
-                  animateRows={true}
+                  onRowDataUpdated={refreshTotals}
+                  onFilterChanged={refreshTotals}
+                  rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: true }}
                   rowHeight={52}
                   headerHeight={44}
                   rowClass="cursor-pointer"
@@ -630,11 +579,11 @@ export default function FlowsPage() {
       {openFlow && (
         <FlowPanel
           flow={openFlow}
-          onClose={() => setOpenFlow(null)}
+          onClose={() => setOpenFlowId(null)}
           refreshFlows={refreshFlows}
           onDelete={(id) => {
             setFlows((prev) => prev.filter((f) => f.id !== id));
-            setOpenFlow(null);
+            setOpenFlowId(null);
           }}
         />
       )}

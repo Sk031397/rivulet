@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { deleteFlow, updateFlow, getFlowByIdUnscoped } from "@/lib/store";
+import { toPublicFlow } from "@/lib/publicFlow";
+import { cleanRecipient } from "@/lib/flowRules";
 
 /**
  * GET /api/flows/[id] — public, single-flow lookup for the contributor-facing
@@ -12,25 +14,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const flow = await getFlowByIdUnscoped(id);
   if (!flow) return Response.json({ error: "flow not found" }, { status: 404 });
 
-  // Strip owner-only and private fields; expose just what the pay page needs.
-  // Payout recipients (emails/phones) are deliberately omitted — a contributor
-  // doesn't need to see who gets paid or at what address.
-  const publicFlow = {
-    id: flow.id,
-    name: flow.name,
-    status: flow.status,
-    collected: flow.collected,
-    goal: flow.goal,
-    contributors: flow.contributors,
-    payouts: flow.payouts.map((p) => ({
-      label: p.label,
-      amount: p.amount,
-      state: p.state,
-      note: p.note,
-    })),
-    resources: flow.resources ?? [],
-  };
-  return Response.json({ flow: publicFlow });
+  // Contributors only ever see the public projection (no owner id, no recipients).
+  return Response.json({ flow: toPublicFlow(flow) });
 }
 
 /** DELETE /api/flows/[id] — remove one of the signed-in user's flows. */
@@ -42,20 +27,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const ok = await deleteFlow(id, userId);
   if (!ok) return Response.json({ error: "flow not found" }, { status: 404 });
   return Response.json({ ok: true });
-}
-
-/* ── recipient validation (mirrors the Send page rules) ──────────────── */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^\+?[1-9]\d{6,14}$/;
-const normalizePhone = (v: string) => v.replace(/[\s\-.()]/g, "");
-
-/** Returns a cleaned recipient string, or null if the value is invalid. */
-function cleanRecipient(raw: string): string | null {
-  const v = raw.trim();
-  if (!v) return ""; // empty is allowed — it clears the recipient
-  if (v.includes("@")) return EMAIL_RE.test(v) ? v : null;
-  const phone = normalizePhone(v);
-  return PHONE_RE.test(phone) ? phone : null;
 }
 
 interface RecipientUpdate {
@@ -128,19 +99,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // A payout that has already been paid can't be re-pointed at someone else.
+  // Checked before anything is applied, so a refused request changes nothing.
+  const refused: { label: string | null } = { label: null };
+  const findPayout = (f: { payouts: Array<{ id?: string; label: string }> }, u: RecipientUpdate) =>
+    (u.id && f.payouts.find((p) => p.id === u.id)) || f.payouts.find((p) => p.label === u.label);
+
   const flow = await updateFlow(id, userId, (f) => {
+    if (recipientUpdates) {
+      for (const u of recipientUpdates) {
+        const payout = findPayout(f, u) as (typeof f.payouts)[number] | undefined;
+        if (payout && payout.state === "paid" && (u.recipient || undefined) !== payout.recipient) {
+          refused.label = payout.label;
+          return;
+        }
+      }
+    }
     if (name !== null) f.name = name;
     if (recipientUpdates) {
       for (const u of recipientUpdates) {
         // Prefer matching by stable id; fall back to label for older flows.
-        const payout =
-          (u.id && f.payouts.find((p) => p.id === u.id)) ||
-          f.payouts.find((p) => p.label === u.label);
+        const payout = findPayout(f, u) as (typeof f.payouts)[number] | undefined;
         if (payout) payout.recipient = u.recipient || undefined;
       }
     }
   });
 
+  if (refused.label) {
+    return Response.json(
+      { error: `"${refused.label}" has already been paid, so its recipient can't be changed.` },
+      { status: 409 },
+    );
+  }
   if (!flow) return Response.json({ error: "flow not found" }, { status: 404 });
   return Response.json({ flow });
 }

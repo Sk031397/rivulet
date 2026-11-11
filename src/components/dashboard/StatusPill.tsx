@@ -6,6 +6,7 @@ const TONES: Record<FlowStatus, string> = {
   Collecting: "bg-ultra/10 text-ultra",
   "Needs approval": "bg-coral/15 text-coral",
   "Paid out": "bg-mint/25 text-emerald-800",
+  Refunded: "bg-ink/10 text-ink/70",
 };
 
 export default function StatusPill({ status }: { status: FlowStatus }) {

@@ -3,20 +3,32 @@ import { listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
 import type { Payment } from "@/data/dashboard";
 
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+
 /**
  * GET /api/payments
  *
  * Merges two sources into a unified Payment[] list:
- *  1. PayPal transaction history (last 30 days) — real money-in events
- *  2. Flow store — contributor captures (money-in) and approved payouts (money-out)
+ *  1. PayPal transaction history (last 30 days) — real money-in/out events
+ *  2. Flow store — recorded contributions (money-in) and approved payouts (money-out)
  *
- * Falls back to flow-store-only when PayPal credentials are absent.
+ * Contributions recorded by the app carry PayPal's capture id, which is also the
+ * PayPal transaction id — so a payment that appears in both sources is shown
+ * once (the flow-store row wins, since it knows the flow name and payer).
  */
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const payments: Payment[] = [];
+  const flows = await getAllFlows(userId);
+
+  // Capture ids we already represent from the flow store.
+  const knownCaptureIds = new Set<string>();
+  for (const flow of flows) {
+    for (const c of flow.contributions ?? []) knownCaptureIds.add(c.id);
+  }
 
   // ── Source 1: PayPal transaction history ────────────────────────────
   const details = await listTransactions();
@@ -25,25 +37,22 @@ export async function GET() {
       const info = t.transaction_info ?? {};
       const amt = Math.abs(Number(info.transaction_amount?.value ?? 0));
       if (!amt) continue;
+      // Already shown as a recorded contribution — skip the duplicate.
+      if (info.transaction_id && knownCaptureIds.has(info.transaction_id)) continue;
 
       const rawAmt = Number(info.transaction_amount?.value ?? 0);
       const direction: Payment["direction"] = rawAmt >= 0 ? "in" : "out";
       const who = (t.payer_info?.email_address ?? "PayPal").split("@")[0];
       const subject = info.transaction_subject || info.transaction_note || "PayPal transaction";
       const isoDate = info.transaction_initiation_date ?? new Date().toISOString();
-      const date = new Date(isoDate).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
 
       payments.push({
-        id: `pp-${isoDate}-${amt}`,
+        id: info.transaction_id ? `pp-${info.transaction_id}` : `pp-${isoDate}-${amt}`,
         flow: subject,
         who,
         direction,
         amount: amt,
-        date,
+        date: fmtDate(new Date(isoDate)),
         method: "PayPal",
         status: "completed",
       });
@@ -51,58 +60,47 @@ export async function GET() {
   }
 
   // ── Source 2: Flow store ─────────────────────────────────────────────
-  const flows = await getAllFlows(userId);
-
   for (const flow of flows) {
-    // Every flow with collected > 0 represents contributor payments in
-    if (flow.collected > 0) {
-      const contributors = flow.contributors || 1;
-      const perContributor = Number((flow.collected / contributors).toFixed(2));
+    const contributions = flow.contributions ?? [];
 
-      // Generate one row per contributor (estimated split)
-      for (let i = 0; i < contributors; i++) {
+    if (contributions.length > 0) {
+      // Real, individually-recorded payments.
+      for (const c of contributions) {
         payments.push({
-          id: `flow-in-${flow.id}-${i}`,
+          id: `flow-in-${flow.id}-${c.id}`,
           flow: flow.name,
-          who: `Contributor ${i + 1}`,
+          who: c.payer ?? "Unknown payer",
           direction: "in",
-          amount: perContributor,
-          date: new Date().toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          }),
+          amount: c.amount,
+          date: fmtDate(new Date(c.at)),
           method: "PayPal",
-          status: flow.status === "Needs approval" || flow.status === "Collecting"
-            ? "pending"
-            : "completed",
-        });
-      }
-    }
-
-    // Paid-out flows: each payout with a recipient = an outbound payment
-    if (flow.status === "Paid out") {
-      for (const payout of flow.payouts) {
-        if (!payout.amount) continue;
-        payments.push({
-          id: `flow-out-${flow.id}-${payout.label}`,
-          flow: flow.name,
-          who: payout.recipient ?? payout.label,
-          direction: "out",
-          amount: payout.amount,
-          date: new Date().toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          }),
-          method: "PayPal Payout",
           status: "completed",
         });
       }
     }
+    // A flow with money collected but no itemized contributions (recorded before
+    // contributions were tracked) shows no incoming rows. Inventing "Contributor
+    // 1, 2, 3…" with an even split and today's date would be made-up data.
+
+    // Payouts that have actually been sent.
+    for (const payout of flow.payouts) {
+      if (payout.state !== "paid" || !payout.amount) continue;
+      payments.push({
+        id: `flow-out-${flow.id}-${payout.id ?? payout.label}`,
+        flow: flow.name,
+        who: payout.recipient ?? payout.label,
+        direction: "out",
+        amount: payout.amount,
+        // The real time it was sent; "—" for payouts paid before this was recorded
+        // (showing today's date would be wrong).
+        date: payout.paidAt ? fmtDate(new Date(payout.paidAt)) : "—",
+        method: "PayPal Payout",
+        status: "completed",
+      });
+    }
   }
 
-  // Deduplicate by id (PayPal source may overlap with flow source for the same tx)
+  // Deduplicate by id
   const seen = new Set<string>();
   const deduped = payments.filter((p) => {
     if (seen.has(p.id)) return false;
@@ -110,7 +108,7 @@ export async function GET() {
     return true;
   });
 
-  // Sort newest first — best-effort since flow rows use today's date
+  // Sort newest first
   deduped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const mode = details && details.length > 0 ? "paypal" : flows.length > 0 ? "flows" : "empty";

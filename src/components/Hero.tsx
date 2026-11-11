@@ -7,6 +7,7 @@ import { ArrowRight, Play, X } from "lucide-react";
 import Mark from "./Mark";
 import FlowMock from "./FlowMock";
 import { BRAND } from "@/data/content";
+import type { PublicFlow } from "@/lib/publicFlow";
 
 /**
  * Demo video source. Pick ONE of the following shapes:
@@ -138,7 +139,46 @@ function DemoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function Hero() {
+/**
+ * Shown instead of a flow when the visitor isn't signed in (or has no flows yet):
+ * the real demo video, inline. Nothing here is invented — if no video is
+ * configured, the column simply stays empty.
+ */
+function HeroVideo() {
+  if (!DEMO_VIDEO || ("id" in DEMO_VIDEO && !DEMO_VIDEO.id) || ("src" in DEMO_VIDEO && !DEMO_VIDEO.src)) return null;
+  const frame = "aspect-video w-full overflow-hidden rounded-3xl bg-black shadow-2xl shadow-ink/25 ring-1 ring-white/10";
+  if (DEMO_VIDEO.type === "file") {
+    return (
+      <video
+        src={DEMO_VIDEO.src}
+        controls
+        playsInline
+        preload="metadata"
+        aria-label={`${BRAND.name} demo video`}
+        className={frame}
+      />
+    );
+  }
+  const src =
+    DEMO_VIDEO.type === "youtube"
+      ? `https://www.youtube-nocookie.com/embed/${DEMO_VIDEO.id}?rel=0`
+      : `https://player.vimeo.com/video/${DEMO_VIDEO.id}`;
+  return (
+    <iframe
+      src={src}
+      title={`${BRAND.name} demo video`}
+      className={frame}
+      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+    />
+  );
+}
+
+/**
+ * `flow` is the signed-in visitor's own latest flow (public projection), or
+ * null for everyone else.
+ */
+export default function Hero({ flow }: { flow: PublicFlow | null }) {
   const [demoOpen, setDemoOpen] = useState(false);
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
 
@@ -181,30 +221,33 @@ export default function Hero() {
             <span className="block text-ultra">{BRAND.tagline}</span>
           </h1>
           <p className="animate-fade-up delay-150 mt-6 max-w-md text-lg leading-relaxed text-ink/75">
-            Describe your idea and AI builds the payment flow: collect, split, and pay out on your conditions, all in one place.
+            Tell Rivulet the trip. It collects everyone’s share through PayPal, pays the villa, flights and dinner when the pot is full, and refunds everyone if the trip falls through.
           </p>
           <div className="animate-fade-up delay-300 mt-8 flex flex-wrap items-center gap-6">
             <Link href="/dashboard" className="group inline-flex items-center gap-2 rounded-full bg-ultra px-7 py-3.5 font-display font-bold text-white shadow-lg shadow-ultra/30 transition hover:bg-ink hover:shadow-xl hover:shadow-ultra/40 hover:-translate-y-0.5">
               Create your flow <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-1" />
             </Link>
-            <button
-              type="button"
-              onClick={() => setDemoOpen(true)}
-              className="group inline-flex items-center gap-2 font-semibold text-ink transition hover:text-ultra"
-            >
-              <span className="grid size-9 place-items-center rounded-full border-2 border-current transition duration-200 group-hover:scale-110 group-hover:bg-ultra/10">
-                <Play className="size-3.5 fill-current" />
-              </span>
-              Watch demo
-            </button>
+            {/* With the demo video inline (logged-out), a second "watch" button would just repeat it. */}
+            {flow && (
+              <button
+                type="button"
+                onClick={() => setDemoOpen(true)}
+                className="group inline-flex items-center gap-2 font-semibold text-ink transition hover:text-ultra"
+              >
+                <span className="grid size-9 place-items-center rounded-full border-2 border-current transition duration-200 group-hover:scale-110 group-hover:bg-ultra/10">
+                  <Play className="size-3.5 fill-current" />
+                </span>
+                Watch demo
+              </button>
+            )}
           </div>
         </div>
         <div className="animate-fade-up delay-500">
-          <FlowMock />
+          {flow ? <FlowMock flow={flow} /> : <HeroVideo />}
         </div>
       </div>
 
-      {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
+      {demoOpen && flow && <DemoModal onClose={() => setDemoOpen(false)} />}
     </section>
   );
 }

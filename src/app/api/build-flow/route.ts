@@ -1,11 +1,15 @@
-import { generateText } from "ai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { FlowSchema, toDashboardFlow, type FlowPlan } from "@/lib/flow";
-import { createOrderForAmount, hasPayPalCreds } from "@/lib/paypal";
-import { saveFlow } from "@/lib/store";
+import { runFlowAgent } from "@/lib/agent";
+import { checkRecipient, isBlankRecipient, nameFromAddress, type Contact } from "@/lib/flowRules";
+import { getAllFlows, saveFlow } from "@/lib/store";
+
+/** Override to try a stronger model (e.g. amazon.nova-pro-v1:0). */
+const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0";
+const MAX_PROMPT_CHARS = 1000;
+const MAX_CLIENT_CONTACTS = 200;
 
 /* ─── Bedrock ────────────────────────────────────────────────────────── */
 function makeBedrock() {
@@ -15,49 +19,53 @@ function makeBedrock() {
   });
 }
 
-/* ─── System prompt — design only, no tool calls ─────────────────────── */
-const SYSTEM_PROMPT = `You are a payment-flow designer for Rivulet.
-Given a user's plain-English goal, output a single JSON object — nothing else.
-No markdown, no code fences, no explanation. Just raw JSON.
+/* ─── Contacts the agent may resolve names against ───────────────────── */
 
-Required shape:
-{
-  "name": "<short human flow name, max 80 chars>",
-  "summary": "<one sentence describing the flow>",
-  "goal": <total USD amount as a number>,
-  "payouts": [
-    {
-      "label": "<payout name>",
-      "amount": <USD number>,
-      "state": "pending",
-      "note": "<when/how this releases>",
-      "recipient": "<PayPal email of the recipient, or null if not known>"
+/** Keep only plain name characters so a saved name can't smuggle in instructions. */
+const cleanName = (s: unknown) =>
+  String(s ?? "")
+    .replace(/[^\p{L}\p{N} .'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+
+/**
+ * Past recipients from the user's own flows, plus contacts saved in their
+ * browser address book (sent by the client). Client data is untrusted: only
+ * addresses that pass validation are kept, and names are scrubbed.
+ */
+async function collectContacts(ownerId: string, clientContacts: unknown): Promise<Contact[]> {
+  const byAddress = new Map<string, Contact>();
+  const add = (address: string, name: string) => {
+    const key = address.toLowerCase();
+    // Prefer a real saved name over one derived from the address.
+    if (!byAddress.has(key) || name !== nameFromAddress(address)) {
+      byAddress.set(key, { name: name || nameFromAddress(address), address });
     }
-  ],
-  "resources": []
+  };
+
+  for (const flow of await getAllFlows(ownerId)) {
+    for (const p of flow.payouts) {
+      if (isBlankRecipient(p.recipient)) continue;
+      const check = checkRecipient(p.recipient as string);
+      if (check.valid) add(check.value, nameFromAddress(check.value));
+    }
+  }
+
+  if (Array.isArray(clientContacts)) {
+    for (const raw of clientContacts.slice(0, MAX_CLIENT_CONTACTS)) {
+      if (typeof raw !== "object" || raw === null) continue;
+      const { name, address } = raw as { name?: unknown; address?: unknown };
+      if (typeof address !== "string") continue;
+      const check = checkRecipient(address);
+      if (check.valid) add(check.value, cleanName(name));
+    }
+  }
+
+  return Array.from(byAddress.values());
 }
 
-Rules:
-- payouts must be an array with 1–8 items
-- payout amounts should roughly sum to the goal
-- state must be "paid", "pending", or "locked"
-- recipient must be a valid email string if the user mentioned a specific person's email, otherwise null
-- resources must be an empty array (the system will fill it in)
-- goal must be a positive number`;
-
-/* ─── Helpers ─────────────────────────────────────────────────────────── */
-function stripFences(text: string): string {
-  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
-}
-
-function parseFlowPlan(text: string): FlowPlan {
-  const cleaned = stripFences(text);
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error(`Nova did not return JSON. Got: ${cleaned.slice(0, 200)}`);
-  const parsed = JSON.parse(match[0]);
-  return FlowSchema.parse(parsed);
-}
-
+/* ─── Errors ─────────────────────────────────────────────────────────── */
 function isRateLimit(err: unknown): boolean {
   const msg = String((err as Error)?.message ?? err);
   return (
@@ -81,51 +89,48 @@ export async function POST(req: NextRequest) {
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   let prompt = "";
+  let clientContacts: unknown;
   try {
-    const body = (await req.json()) as { prompt?: unknown };
+    const body = (await req.json()) as { prompt?: unknown; contacts?: unknown };
     prompt = (body?.prompt ?? "").toString().trim();
+    clientContacts = body?.contacts;
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
   if (!prompt) return Response.json({ error: "prompt is required" }, { status: 400 });
+  if (prompt.length > MAX_PROMPT_CHARS) {
+    return Response.json(
+      { error: "prompt_too_long", message: `Keep your description under ${MAX_PROMPT_CHARS} characters.` },
+      { status: 400 },
+    );
+  }
 
   try {
-    /* Step 1 — Ask Nova to design the flow (text only, no tools) */
+    const contacts = await collectContacts(userId, clientContacts);
     const bedrock = makeBedrock();
-    const { text } = await generateText({
-      model: bedrock("amazon.nova-lite-v1:0"),
-      maxRetries: 0,
-      system: SYSTEM_PROMPT,
+
+    const { flow, steps, warnings, reply, problem } = await runFlowAgent({
+      model: bedrock(MODEL_ID),
       prompt,
+      ownerId: userId,
+      contacts,
     });
 
-    const plan = parseFlowPlan(text);
-
-    /* Step 2 — Create a real PayPal sandbox order for the goal amount */
-    const resources: FlowPlan["resources"] = [];
-
-    if (hasPayPalCreds()) {
-      const order = await createOrderForAmount(plan.goal, plan.summary ?? plan.name);
-      if (order.ok && order.orderId) {
-        resources.push({
-          kind: "PayPal Order",
-          id: order.orderId,
-          link: order.approveLink ?? null,
-          note: `Collect $${plan.goal.toFixed(2)} — share this link for contributors to pay`,
-        });
-      }
+    if (!flow) {
+      // Tell the user WHY, in the agent's own words where it said something
+      // useful, instead of a generic failure.
+      const message = problem
+        ? `I couldn't create that flow — ${problem}`
+        : reply ||
+          "The assistant couldn't turn that into a valid flow. Try stating the total amount and who gets paid how much.";
+      return Response.json({ error: "agent_incomplete", message, steps }, { status: 422 });
     }
 
-    const flow = toDashboardFlow({ ...plan, resources }, userId);
-
-    // Persist to the database so webhooks/captures can find and update this flow
+    // Persist so contributors can pay into it and captures can find it.
     await saveFlow(flow);
 
-    return Response.json({
-      flow,
-      mode: hasPayPalCreds() ? "paypal" : "ai",
-    });
+    return Response.json({ flow, steps, warnings });
   } catch (err) {
     console.error("[build-flow] failed:", err);
 

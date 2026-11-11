@@ -27,7 +27,7 @@ export default function HowItWorks() {
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          Just describe it. We'll handle the rest.
+          Describe the trip. We'll handle the money.
         </h2>
 
         <ol className="mt-12 grid items-start gap-10 md:grid-cols-[1fr_auto_1fr_auto_1fr]">

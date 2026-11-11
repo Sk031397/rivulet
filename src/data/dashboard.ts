@@ -1,20 +1,8 @@
 import {
   LayoutGrid, GitFork, ArrowLeftRight, Users, LayoutTemplate, Settings,
-  Send, Plane, Music2, Wand2, Heart, MessageCircle,
+  Send, Plane, Home, Mountain, PartyPopper, Car, Utensils,
   type LucideIcon,
 } from "lucide-react";
-
-/* ─── User ─────────────────────────────────────────────────────────── */
-export interface User {
-  name: string;
-  full: string;
-  plan: string;
-  initials: string;
-}
-
-// Placeholder identity shown until real auth is implemented.
-// Replace with your auth provider's session values.
-export const USER: User = { name: "You", full: "Your Account", plan: "Free plan", initials: "YA" };
 
 /* ─── Sidebar ───────────────────────────────────────────────────────── */
 export interface SidebarItem {
@@ -58,8 +46,23 @@ export interface Payout {
   amount: number;
   state: PayoutState;
   note: string;
+  /** ISO time the payout was actually sent. Absent on payouts paid before this was recorded. */
+  paidAt?: string;
+  /**
+   * A release condition the organizer stated (for example "Tasks verified").
+   * While any unpaid payout has one, reaching the goal HOLDS the flow for the
+   * owner's approval instead of paying out automatically.
+   */
+  condition?: string;
   /** PayPal email of the recipient — required for real disbursement on approval. */
   recipient?: string;
+  /**
+   * Set by the PayPal webhook when a payout that was sent did not land
+   * (failed, returned, blocked, or unclaimed). Cleared when it is retried.
+   */
+  issue?: string;
+  /** Last payout item status PayPal reported for this payout. */
+  itemStatus?: string;
 }
 
 export interface FlowResource {
@@ -69,7 +72,22 @@ export interface FlowResource {
   note: string;
 }
 
-export type FlowStatus = "Collecting" | "Needs approval" | "Paid out";
+export type FlowStatus = "Collecting" | "Needs approval" | "Paid out" | "Refunded";
+
+/** One real, settled PayPal payment into a flow. */
+export interface Contribution {
+  /** PayPal capture id — unique per payment, used to make capture idempotent. */
+  id: string;
+  amount: number;
+  /** ISO timestamp of when the payment was recorded. */
+  at: string;
+  /** Payer's display name or email as reported by PayPal (owner-only; never public). */
+  payer?: string;
+  /** PayPal refund id, once this payment has been returned to the contributor. */
+  refundId?: string;
+  /** ISO time the refund was issued. */
+  refundedAt?: string;
+}
 
 export interface Flow {
   id: string;
@@ -80,6 +98,18 @@ export interface Flow {
   collected: number;
   goal: number;
   contributors: number;
+  /** Group size for a trip-style flow: each person's share is goal / participants. */
+  participants?: number;
+  /** ISO date (YYYY-MM-DD). After the end of this day no new contributions are accepted. */
+  deadline?: string;
+  /** Settled payments into this flow. Absent on flows created before this existed. */
+  contributions?: Contribution[];
+  /**
+   * ISO time a payout run started. While recent, no other payout run may start
+   * on this flow — prevents the auto-payout and the owner's Approve button (or
+   * two tabs) from paying the same recipients twice.
+   */
+  disbursingAt?: string;
   payouts: Payout[];
   resources?: FlowResource[];
 }
@@ -112,6 +142,8 @@ export interface Payment {
 export type PersonRole = "Owner" | "Contributor" | "Recipient";
 
 export interface Person {
+  /** Unique key (the recipient address), used as the grid's row id. */
+  id?: string;
   name: string;
   initials: string;
   role: PersonRole;
@@ -133,10 +165,10 @@ export interface Template {
 }
 
 export const TEMPLATES: Template[] = [
-  { name: "Group trip pool",       description: "Collect per-person shares, then pay deposits and final costs.",   category: "Travel",    icon: Plane,        tone: "from-coral to-ultra",   payouts: 3 },
-  { name: "Event with volunteers", description: "Fund an event and reward volunteers once tasks are verified.",    category: "Community", icon: Users,        tone: "from-mint to-ultra",    payouts: 3 },
-  { name: "Creator revenue split", description: "Split earnings between collaborators on a fixed schedule.",       category: "Creators",  icon: Music2,       tone: "from-ink to-ultra",     payouts: 4 },
-  { name: "Milestone project",     description: "Pay a freelancer in stages tied to deliverables.",               category: "Freelance", icon: Wand2,        tone: "from-ultra to-coral",   payouts: 3 },
-  { name: "Charity drive",         description: "Collect donations and route them to causes automatically.",       category: "Impact",    icon: Heart,        tone: "from-saffron to-coral", payouts: 2 },
-  { name: "Team celebration",      description: "Pool money from teammates and split the venue and food costs.",   category: "Community", icon: MessageCircle,tone: "from-mint to-saffron",  payouts: 2 },
+  { name: "Weekend house rental",  description: "Plan a weekend trip for 6 friends: collect $2,400 total. Pay a $600 deposit to the host now and the $1,800 balance after everyone has paid. Everyone must pay within 2 weeks.", category: "Trips", icon: Home, tone: "from-coral to-ultra", payouts: 2 },
+  { name: "Group flights",         description: "Book flights for 4 friends: collect $1,840 total, $460 each. Reimburse the organizer who is booking the tickets. Everyone must pay within 10 days.", category: "Trips", icon: Plane, tone: "from-ultra to-coral", payouts: 1 },
+  { name: "Ski trip",              description: "Ski weekend for 8 people at $120 each, $960 total. Pay $600 for the lodge and $360 for the lift tickets. Everyone must pay within 3 weeks.", category: "Trips", icon: Mountain, tone: "from-mint to-ultra", payouts: 2 },
+  { name: "Bachelor/ette party",   description: "Party weekend for 10 people, $3,000 total. Pay $1,800 for the hotel, $700 for activities and $500 for the group dinner. Everyone must pay within a month.", category: "Celebrations", icon: PartyPopper, tone: "from-saffron to-coral", payouts: 3 },
+  { name: "Road trip fund",        description: "Road trip for 5 friends, $1,000 total. Pay $550 to the car rental company and $450 into a shared fuel and campsite fund. Everyone must pay within 2 weeks.", category: "Trips", icon: Car, tone: "from-ink to-ultra", payouts: 2 },
+  { name: "Group dinner",          description: "Dinner for 8 friends, $480 total. Pay the restaurant $480 once everyone has paid their $60 share. Everyone must pay within a week.", category: "Celebrations", icon: Utensils, tone: "from-mint to-saffron", payouts: 1 },
 ];

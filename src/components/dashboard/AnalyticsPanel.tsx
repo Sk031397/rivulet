@@ -9,19 +9,18 @@ import {
   ModuleRegistry,
   AllCommunityModule,
   ValidationModule,
-  themeQuartz,
+  type GetRowIdParams,
 } from "ag-grid-community";
 import { ArrowDownLeft, ArrowUpRight, TrendingUp, BarChart3, Loader2 } from "lucide-react";
 import { type Payment } from "@/data/dashboard";
+import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
+import { setPinnedTotals, sumMoney } from "@/lib/gridHelpers";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 const money = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-const compact = (n: number) =>
-  `$${n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })}`;
 
 /** A per-flow aggregate row for the analytics grid. */
 interface FlowAgg {
@@ -49,16 +48,18 @@ function TrendChart({ data }: { data: DayBucket[] }) {
   const W = 640;
   const H = 180;
   const PAD = 8;
+  const LABEL = 20; // room under the baseline for the day labels (they were being clipped)
+  const base = H - PAD - LABEL; // y of the baseline
   const max = Math.max(1, ...data.map((d) => Math.max(d.inAmt, d.outAmt)));
   const slot = (W - PAD * 2) / data.length;
   const barW = Math.min(16, slot / 3);
 
-  const y = (v: number) => H - PAD - (v / max) * (H - PAD * 2);
+  const y = (v: number) => base - (v / max) * (base - PAD);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-44 w-full" role="img" aria-label="Money in versus money out by day">
       {/* baseline */}
-      <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} className="stroke-ink/10" strokeWidth={1} />
+      <line x1={PAD} y1={base} x2={W - PAD} y2={base} className="stroke-ink/10" strokeWidth={1} />
       {data.map((d, i) => {
         const cx = PAD + slot * i + slot / 2;
         return (
@@ -68,7 +69,7 @@ function TrendChart({ data }: { data: DayBucket[] }) {
               x={cx - barW - 1}
               y={y(d.inAmt)}
               width={barW}
-              height={Math.max(0, H - PAD - y(d.inAmt))}
+              height={Math.max(0, base - y(d.inAmt))}
               rx={3}
               className="fill-emerald-500/80"
             >
@@ -79,14 +80,14 @@ function TrendChart({ data }: { data: DayBucket[] }) {
               x={cx + 1}
               y={y(d.outAmt)}
               width={barW}
-              height={Math.max(0, H - PAD - y(d.outAmt))}
+              height={Math.max(0, base - y(d.outAmt))}
               rx={3}
               className="fill-ultra/80"
             >
               <title>{`${d.label} · out ${money(d.outAmt)}`}</title>
             </rect>
             {/* day label */}
-            <text x={cx} y={H - PAD + 12} textAnchor="middle" className="fill-ink/40 text-[9px]">
+            <text x={cx} y={base + 15} textAnchor="middle" className="fill-ink/40 text-[9px]">
               {d.label}
             </text>
           </g>
@@ -190,15 +191,37 @@ export default function AnalyticsPanel() {
     { field: "paidOut", headerName: "Paid out", width: 140, sortable: true, filter: "agNumberColumnFilter", type: "rightAligned", cellRenderer: MoneyCell },
     { field: "net", headerName: "Net", width: 150, sortable: true, filter: "agNumberColumnFilter", type: "rightAligned", cellRenderer: NetCell, sort: "desc" },
     { field: "count", headerName: "Txns", width: 90, sortable: true, filter: "agNumberColumnFilter", type: "rightAligned" },
-    { field: "contributors", headerName: "People", width: 100, sortable: true, filter: "agNumberColumnFilter", type: "rightAligned" },
+    { field: "contributors", headerName: "People", width: 100, sortable: true, filter: "agNumberColumnFilter", type: "rightAligned", valueFormatter: (p) => (p.node?.rowPinned ? "" : String(p.value ?? "")) },
   ], []);
 
-  const defaultColDef = useMemo<ColDef>(() => ({ resizable: true, suppressMovable: false }), []);
+  const defaultColDef = useMemo<ColDef>(
+    // Live polling: a cell whose value changed glows briefly.
+    () => ({ resizable: true, suppressMovable: false, enableCellChangeFlash: true }),
+    [],
+  );
+
+  /** Stable ids let polling update rows in place instead of replacing the table. */
+  const getRowId = useCallback((p: GetRowIdParams<FlowAgg>) => p.data.flow, []);
+
+  /** Totals across the flows that pass the current filters. */
+  const refreshTotals = useCallback(() => {
+    if (!gridApi.current) return;
+    setPinnedTotals(gridApi.current, (rows) => ({
+      flow: `Total · ${rows.length} flow${rows.length === 1 ? "" : "s"}`,
+      collected: sumMoney(rows.map((r) => r.collected)),
+      paidOut: sumMoney(rows.map((r) => r.paidOut)),
+      net: sumMoney(rows.map((r) => r.net)),
+      count: rows.reduce((s, r) => s + r.count, 0),
+      // People can overlap between flows, so a sum would double count.
+      contributors: 0,
+    }));
+  }, []);
 
   const onGridReady = useCallback((e: GridReadyEvent<FlowAgg>) => {
     gridApi.current = e.api;
     e.api.sizeColumnsToFit();
-  }, []);
+    refreshTotals();
+  }, [refreshTotals]);
 
   if (loading) {
     return (
@@ -244,16 +267,16 @@ export default function AnalyticsPanel() {
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div className="rounded-2xl bg-mint/15 p-3">
             <p className="text-[11px] font-semibold text-emerald-800/70">Total in</p>
-            <p className="mt-0.5 text-lg font-extrabold tabular-nums text-emerald-700">{compact(totalIn)}</p>
+            <p className="mt-0.5 text-lg font-extrabold tabular-nums text-emerald-700">{money(totalIn)}</p>
           </div>
           <div className="rounded-2xl bg-ultra/10 p-3">
             <p className="text-[11px] font-semibold text-ultra/70">Total out</p>
-            <p className="mt-0.5 text-lg font-extrabold tabular-nums text-ultra">{compact(totalOut)}</p>
+            <p className="mt-0.5 text-lg font-extrabold tabular-nums text-ultra">{money(totalOut)}</p>
           </div>
           <div className={`rounded-2xl p-3 ${net >= 0 ? "bg-saffron/20" : "bg-coral/10"}`}>
             <p className={`text-[11px] font-semibold ${net >= 0 ? "text-amber-800/70" : "text-coral/70"}`}>Net</p>
             <p className={`mt-0.5 text-lg font-extrabold tabular-nums ${net >= 0 ? "text-amber-700" : "text-coral"}`}>
-              {net >= 0 ? "+" : "−"}{compact(Math.abs(net))}
+              {net >= 0 ? "+" : "−"}{money(Math.abs(net))}
             </p>
           </div>
         </div>
@@ -276,7 +299,7 @@ export default function AnalyticsPanel() {
           </div>
           <button
             type="button"
-            onClick={() => gridApi.current?.exportDataAsCsv({ fileName: `rivulet-flow-breakdown-${new Date().toISOString().slice(0, 10)}.csv` })}
+            onClick={() => gridApi.current?.exportDataAsCsv({ fileName: `rivulet-flow-breakdown-${new Date().toISOString().slice(0, 10)}.csv`, skipPinnedBottom: true })}
             className="rounded-full bg-white px-4 py-2 text-xs font-bold text-ink ring-1 ring-ink/10 transition hover:ring-ultra"
           >
             Export CSV
@@ -288,9 +311,12 @@ export default function AnalyticsPanel() {
             rowData={flowRows}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
-            theme={themeQuartz}
+            theme={rivuletTheme}
+            getRowId={getRowId}
+            {...LIVE_GRID_OPTIONS}
             onGridReady={onGridReady}
-            animateRows
+            onRowDataUpdated={refreshTotals}
+            onFilterChanged={refreshTotals}
             rowHeight={48}
             headerHeight={42}
           />

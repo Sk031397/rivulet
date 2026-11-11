@@ -11,9 +11,11 @@ import {
   ModuleRegistry,
   AllCommunityModule,
   ValidationModule,
-  themeQuartz,
+  type GetRowIdParams,
 } from "ag-grid-community";
 import PageHeader from "@/components/dashboard/PageHeader";
+import { rivuletTheme, LIVE_GRID_OPTIONS } from "@/lib/gridTheme";
+import { compareDisplayDates } from "@/lib/gridHelpers";
 import { type Person, type PersonRole } from "@/data/dashboard";
 
 ModuleRegistry.registerModules([AllCommunityModule, ValidationModule]);
@@ -165,7 +167,8 @@ function InviteModal({ onClose }: { onClose: () => void }) {
   const [copied, setCopied]   = useState(false);
   const [sent, setSent]       = useState(false);
   const [sending, setSending] = useState(false);
-  const link = "https://rivulet.app/join?ref=maya-rivulet";
+  // A real destination: this site's sign-up page. (The old hard-coded link pointed at a page that doesn't exist.)
+  const [link] = useState(() => `${window.location.origin}/sign-up`);
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(link);
@@ -273,6 +276,7 @@ export default function PeoplePage() {
             } else {
               const name = p.recipient.split("@")[0];
               map.set(key, {
+                id: key,
                 name,
                 initials: name.slice(0, 2).toUpperCase(),
                 role: "Recipient",
@@ -359,13 +363,19 @@ export default function PeoplePage() {
       headerName: "Since",
       width: 120,
       sortable: true,
+      comparator: compareDisplayDates, // "Nov 2026" strings sort as dates, not alphabetically
     },
   ], []);
 
   const defaultColDef = useMemo<ColDef>(() => ({
     resizable: true,
     suppressMovable: false,
+    // Live polling: a cell whose value changed glows briefly.
+    enableCellChangeFlash: true,
   }), []);
+
+  /** Stable ids let polling update rows in place instead of replacing the table. */
+  const getRowId = useCallback((p: GetRowIdParams<Person>) => p.data.id ?? p.data.name, []);
 
   const onGridReady = useCallback((e: GridReadyEvent<Person>) => {
     gridApi.current = e.api;
@@ -442,11 +452,12 @@ export default function PeoplePage() {
                   rowData={rows}
                   columnDefs={colDefs}
                   defaultColDef={defaultColDef}
-                  theme={themeQuartz}
+                  theme={rivuletTheme}
+                  getRowId={getRowId}
+                  {...LIVE_GRID_OPTIONS}
                   onGridReady={onGridReady}
                   onRowClicked={onRowClicked}
-                  rowSelection={{ mode: "singleRow" }}
-                  animateRows={true}
+                  rowSelection={{ mode: "singleRow", checkboxes: false, enableClickSelection: true }}
                   rowHeight={56}
                   headerHeight={44}
                   rowClass="cursor-pointer"

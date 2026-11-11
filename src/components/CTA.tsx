@@ -19,10 +19,10 @@ export default function CTA() {
             <Mark className="animate-float size-24 rotate-6 rounded-3xl" />
           </div>
           <h2 className="font-display max-w-sm text-3xl font-bold leading-tight text-white">
-            The future of payments is programmable.
+            Plan the trip. Skip the awkward money chat.
           </h2>
           <p className="mt-3 max-w-md text-sm text-white/80">
-            Start building smart money flows with {BRAND.name} today.
+            Set up your group's trip with {BRAND.name} and send one link.
           </p>
           <Link href="/dashboard" className="mt-6 inline-flex items-center gap-2 rounded-full bg-saffron px-6 py-2.5 text-sm font-extrabold text-ink transition hover:bg-white hover:-translate-y-0.5">
             Get started free <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-1" />

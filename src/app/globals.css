@@ -173,6 +173,12 @@
   border-radius: 6px;
 }
 
+/* Unsaved edit in an editable grid: tint + accent bar until it is saved. */
+.ag-cell.rv-pending {
+  background-color: rgba(255, 194, 71, 0.28);
+  box-shadow: inset 3px 0 0 var(--color-saffron);
+}
+
 /* ─── Respect reduced-motion preferences ──────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -1,6 +1,6 @@
 // Minimal PayPal REST helpers for the "watch it run" layer.
-// Everything degrades to null when credentials are missing or a call fails,
-// so callers always fall back to illustrative mock data.
+// Everything degrades to null when credentials are missing or a call fails;
+// callers then show what they genuinely have (usually nothing), never invented data.
 
 import type { ActivityItem } from "@/data/dashboard";
 
@@ -44,6 +44,8 @@ export async function getAccessToken(): Promise<string | null> {
 
 export interface PayPalTransaction {
   transaction_info: {
+    /** For a captured checkout payment this equals the capture id. */
+    transaction_id?: string;
     transaction_amount?: { value?: string };
     transaction_subject?: string;
     transaction_note?: string;
@@ -144,6 +146,58 @@ export function transactionsToStats(details: PayPalTransaction[]): {
   return { collected, paidOut, count };
 }
 
+/**
+ * Read an order's current state without changing it. Used to confirm an order
+ * belongs to the flow it claims to (via custom_id) BEFORE capturing any money.
+ */
+export async function getOrder(orderId: string): Promise<{
+  ok: boolean;
+  status?: string;
+  customId?: string;
+  amount?: number;
+  error?: string;
+  /** Present once the order has been captured. */
+  captureId?: string;
+  captureStatus?: string;
+  captureAmount?: number;
+  payerEmail?: string;
+  payerName?: string;
+}> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, error: "no_paypal_creds" };
+
+  const res = await fetch(`${HOST}/v2/checkout/orders/${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    return { ok: false, error: await res.text() };
+  }
+  const data = (await res.json()) as {
+    status?: string;
+    payer?: { email_address?: string; name?: { given_name?: string; surname?: string } };
+    purchase_units?: Array<{
+      custom_id?: string;
+      amount?: { value?: string };
+      payments?: { captures?: Array<{ id?: string; status?: string; amount?: { value?: string } }> };
+    }>;
+  };
+  const unit = data.purchase_units?.[0];
+  const capture = unit?.payments?.captures?.[0];
+  const payerName = [data.payer?.name?.given_name, data.payer?.name?.surname]
+    .filter(Boolean).join(" ") || undefined;
+  return {
+    ok: true,
+    status: data.status,
+    customId: unit?.custom_id,
+    amount: Number(unit?.amount?.value ?? 0),
+    captureId: capture?.id,
+    captureStatus: capture?.status,
+    captureAmount: capture?.amount?.value !== undefined ? Number(capture.amount.value) : undefined,
+    payerEmail: data.payer?.email_address,
+    payerName,
+  };
+}
+
 /** Capture an approved PayPal order, settling the payment. */
 export async function captureOrder(orderId: string): Promise<{
   ok: boolean;
@@ -153,6 +207,12 @@ export async function captureOrder(orderId: string): Promise<{
   payerEmail?: string;
   payerName?: string;
   payerId?: string;
+  /** PayPal's id for the capture itself (unique per payment). */
+  captureId?: string;
+  /** COMPLETED means the money is settled; anything else (e.g. PENDING) is not yet. */
+  captureStatus?: string;
+  /** The custom_id we set when creating the order (the flow id). */
+  customId?: string;
 }> {
   const token = await getAccessToken();
   if (!token) return { ok: false, amount: 0, error: "no_paypal_creds" };
@@ -180,10 +240,15 @@ export async function captureOrder(orderId: string): Promise<{
       name?: { given_name?: string; surname?: string };
     };
     purchase_units?: Array<{
-      payments?: { captures?: Array<{ amount?: { value?: string } }> };
+      custom_id?: string;
+      payments?: {
+        captures?: Array<{ id?: string; status?: string; custom_id?: string; amount?: { value?: string } }>;
+      };
     }>;
   };
-  const amount = Number(data.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value ?? 0);
+  const unit = data.purchase_units?.[0];
+  const capture = unit?.payments?.captures?.[0];
+  const amount = Number(capture?.amount?.value ?? 0);
   const payerName = [data.payer?.name?.given_name, data.payer?.name?.surname]
     .filter(Boolean).join(" ") || undefined;
   return {
@@ -192,6 +257,9 @@ export async function captureOrder(orderId: string): Promise<{
     payerEmail: data.payer?.email_address,
     payerName,
     payerId: data.payer?.payer_id,
+    captureId: capture?.id,
+    captureStatus: capture?.status,
+    customId: capture?.custom_id ?? unit?.custom_id,
   };
 }
 
@@ -199,7 +267,12 @@ export async function captureOrder(orderId: string): Promise<{
  * Create a fresh PayPal order for a specific amount.
  * Used by the per-contributor payment flow so each visitor gets their own order.
  */
-export async function createOrderForAmount(amount: number, description: string): Promise<{
+export async function createOrderForAmount(
+  amount: number,
+  description: string,
+  /** Stored on the PayPal purchase unit so a capture can be tied back to its flow. */
+  customId?: string,
+): Promise<{
   ok: boolean;
   orderId?: string;
   approveLink?: string;
@@ -220,6 +293,7 @@ export async function createOrderForAmount(amount: number, description: string):
       purchase_units: [{
         amount: { currency_code: "USD", value: amount.toFixed(2) },
         description: description.slice(0, 127),
+        ...(customId ? { custom_id: customId.slice(0, 127) } : {}),
       }],
       application_context: { brand_name: "Rivulet", user_action: "PAY_NOW" },
     }),
@@ -259,7 +333,10 @@ export interface PayoutResult {
 }
 
 export async function disburseFlowPayouts(
-  flow: { name: string; payouts: Array<{ label: string; amount: number; state: string; recipient?: string }> },
+  flow: {
+    name: string;
+    payouts: Array<{ id?: string; label: string; amount: number; state: string; recipient?: string }>;
+  },
 ): Promise<{ results: PayoutResult[]; finalStatus: "Paid out" | "Needs approval" }> {
   const results: PayoutResult[] = [];
   const isProduction = process.env.PAYPAL_ENVIRONMENT === "PRODUCTION";
@@ -292,6 +369,8 @@ export async function disburseFlowPayouts(
       recipientType,
       amount: p.amount,
       note: `${flow.name} — ${p.label}`,
+      // Lets the payout webhook find this payout again (ids look like "<flow>-p0").
+      itemId: p.id,
     });
 
     results.push({
@@ -324,6 +403,8 @@ export async function createPayout(params: {
   recipientType: "EMAIL" | "PHONE" | "PAYPAL_ID";
   amount: number;
   note?: string;
+  /** Our own id for this payout, echoed back by PayPal in webhooks as sender_item_id. */
+  itemId?: string;
 }): Promise<{ ok: boolean; status?: number; batchId?: string; itemStatus?: string; error?: string }> {
   const token = await getAccessToken();
   if (!token) return { ok: false, error: "no_paypal_creds" };
@@ -345,7 +426,7 @@ export async function createPayout(params: {
           recipient_type: params.recipientType,
           amount: { value: params.amount.toFixed(2), currency: "USD" },
           note: params.note ? params.note.slice(0, 255) : "Payment from Rivulet",
-          sender_item_id: `rivulet-item-${Date.now()}`,
+          sender_item_id: params.itemId ?? `rivulet-item-${Date.now()}`,
           receiver: params.recipient,
         },
       ],
@@ -368,4 +449,75 @@ export async function createPayout(params: {
     batchId: data.batch_header?.payout_batch_id,
     itemStatus: item?.transaction_status,
   };
+}
+
+/**
+ * Return a captured payment to the contributor in full.
+ *
+ * The PayPal-Request-Id is derived from the capture id, so calling this twice
+ * for the same capture can never refund twice.
+ */
+export async function refundCapture(captureId: string): Promise<{
+  ok: boolean;
+  refundId?: string;
+  status?: string;
+  error?: string;
+}> {
+  const token = await getAccessToken();
+  if (!token) return { ok: false, error: "no_paypal_creds" };
+
+  const res = await fetch(`${HOST}/v2/payments/captures/${encodeURIComponent(captureId)}/refund`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": `rivulet-refund-${captureId}`,
+    },
+    body: JSON.stringify({ note_to_payer: "Refund from Rivulet: the group flow did not go ahead." }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    // Already refunded (e.g. a retry after a timeout) — treat as done.
+    if (err.includes("CAPTURE_FULLY_REFUNDED")) return { ok: true, status: "COMPLETED" };
+    console.error("[paypal] refund failed:", err);
+    return { ok: false, error: err };
+  }
+  const data = (await res.json()) as { id?: string; status?: string };
+  // PENDING refunds still go through; only a CANCELLED/FAILED one does not.
+  const failed = data.status === "CANCELLED" || data.status === "FAILED";
+  return { ok: !failed, refundId: data.id, status: data.status, error: failed ? `refund ${data.status}` : undefined };
+}
+
+/**
+ * Check that a webhook call really came from PayPal, using PayPal's own
+ * verify-webhook-signature endpoint. Returns false on any problem — including a
+ * missing PAYPAL_WEBHOOK_ID — so an unverified call is never acted on.
+ */
+export async function verifyWebhookSignature(
+  headers: Headers,
+  event: unknown,
+): Promise<boolean> {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) return false;
+  const token = await getAccessToken();
+  if (!token) return false;
+
+  const h = (name: string) => headers.get(name) ?? "";
+  const res = await fetch(`${HOST}/v1/notifications/verify-webhook-signature`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      auth_algo: h("paypal-auth-algo"),
+      cert_url: h("paypal-cert-url"),
+      transmission_id: h("paypal-transmission-id"),
+      transmission_sig: h("paypal-transmission-sig"),
+      transmission_time: h("paypal-transmission-time"),
+      webhook_id: webhookId,
+      webhook_event: event,
+    }),
+  });
+  if (!res.ok) return false;
+  const data = (await res.json()) as { verification_status?: string };
+  return data.verification_status === "SUCCESS";
 }
