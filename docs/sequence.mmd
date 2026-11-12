@@ -1,0 +1,34 @@
+sequenceDiagram
+  autonumber
+  actor Org as Organizer
+  actor Fr as Friend
+  participant App as Rivulet (Next.js)
+  participant AI as Bedrock agent
+  participant DB as Postgres
+  participant PP as PayPal
+
+  Org->>App: "Lisbon for 4: $1,000 villa, $600 flights"
+  App->>AI: prompt + contacts
+  AI-->>App: plan (tools: find_contacts, check_recipient, create_flow)
+  App->>App: guard rails (sum to the cent, valid recipients)
+  App->>DB: save flow (Collecting)
+  App-->>Org: pay link
+
+  Fr->>App: open pay page, pick name
+  App->>PP: create order (one per contributor)
+  Fr->>PP: approve payment
+  App->>PP: capture (verifies order belongs to the flow)
+  App->>DB: record contribution (idempotent on capture id)
+
+  alt pot is full
+    App->>PP: Payouts to vendors (payout ids = flowId-pN)
+    PP-->>App: signed webhook: payout SUCCEEDED
+    App->>DB: mark payout paid, flow Paid out
+  else cancelled or deadline missed
+    Org->>App: Refund (or daily cron)
+    App->>PP: refund each capture (request id from capture id)
+    App->>DB: flow Refunded
+  end
+
+  PP-->>App: webhook: refunded / reversed / disputed
+  App->>DB: flag payment, recompute collected

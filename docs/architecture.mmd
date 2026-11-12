@@ -1,0 +1,64 @@
+flowchart LR
+  subgraph Users
+    ORG["Organizer<br/>(dashboard)"]
+    FRI["Friends / contributors<br/>(public pay page)"]
+    DEMO["Demo visitor<br/>(Try the demo)"]
+  end
+
+  subgraph Vercel["Next.js 16 on Vercel (App Router, TypeScript)"]
+    direction TB
+    UI["UI pages<br/>landing, /dashboard/*, /pay/[id]"]
+    PROXY["proxy.ts<br/>Clerk middleware + demo cookie"]
+    SESSION["lib/session.ts<br/>getUserId(): Clerk or demo user"]
+
+    subgraph API["API routes"]
+      BUILD["/api/build-flow"]
+      INV["/api/read-invoice"]
+      ORD["/api/orders<br/>/api/capture"]
+      APPR["/api/flows/approve<br/>/refund, /remind, /[id]"]
+      HOOK["/api/webhooks/paypal"]
+      CRON["/api/cron/expire<br/>(daily)"]
+      READ["/api/flows, /payments,<br/>/stats, /activity"]
+    end
+
+    subgraph RULES["Money rules in code (pure, unit-tested)"]
+      FR["flowRules<br/>recipient + amount checks"]
+      CR["contribution<br/>shares, deadlines,<br/>idempotent capture, refunds"]
+      WR["webhookRules<br/>event to flow changes"]
+    end
+
+    AGENT["lib/agent.ts<br/>tool-calling agent<br/>find_contacts, check_recipient,<br/>create_flow"]
+    PPLIB["lib/paypal.ts"]
+    STORE["lib/store.ts<br/>row-locked transactions"]
+  end
+
+  CLERK[("Clerk<br/>sign-in")]
+  DB[("Postgres / Supabase<br/>flows as jsonb")]
+  BEDROCK[("Amazon Bedrock<br/>Nova Lite")]
+  PAYPAL[("PayPal sandbox<br/>Orders, Payouts, Refunds,<br/>Webhooks, Reporting, JS SDK")]
+  EMAIL[("Resend<br/>optional emails")]
+
+  ORG --> UI
+  DEMO --> UI
+  FRI --> UI
+  UI --> PROXY --> SESSION
+  SESSION -.-> CLERK
+  UI --> API
+
+  BUILD --> AGENT --> BEDROCK
+  AGENT --> FR
+  INV --> BEDROCK
+  ORD --> PPLIB
+  APPR --> PPLIB
+  CRON --> PPLIB
+  HOOK --> WR
+  ORD --> CR
+  APPR --> CR
+  READ --> STORE
+  BUILD --> STORE
+  CR --> STORE
+  WR --> STORE
+  STORE --> DB
+  PPLIB <--> PAYPAL
+  PAYPAL -- "signed webhook" --> HOOK
+  APPR -.-> EMAIL

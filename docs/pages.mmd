@@ -1,0 +1,18 @@
+flowchart TD
+  L["Landing page<br/>Log in / Try the demo"] -->|Try the demo| D
+  L -->|Log in| SI["Sign in (Clerk)"] --> D
+
+  subgraph D["Dashboard"]
+    OV["Overview<br/>prompt box, stats, activity"]
+    FL["Flows<br/>AG Grid, roster, re-split,<br/>approve, refund"]
+    PAY["Payments<br/>ledger"]
+    PE["People"]
+    SE["Send"]
+    SET["Settings"]
+  end
+
+  OV -->|"say the trip / attach invoice"| FL
+  FL -->|share link| PP["Pay page /pay/[id]<br/>share, shares covered,<br/>days left, PayPal checkout"]
+  PP --> TY["Thank-you screen"]
+  PP -.->|"payments flow back"| FL
+  FL --> PAY

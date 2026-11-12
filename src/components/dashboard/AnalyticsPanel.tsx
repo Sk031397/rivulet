@@ -233,14 +233,14 @@ export default function AnalyticsPanel() {
   }
 
   if (payments.length === 0) {
+    // A slim hint instead of a big empty card, so flows sit higher on the page.
     return (
-      <section className="rounded-3xl bg-white p-10 text-center ring-1 ring-ink/5">
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-paper text-ink/30">
-          <BarChart3 className="size-6" />
+      <section className="flex items-center gap-3 rounded-2xl bg-white px-5 py-3 ring-1 ring-ink/5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-paper text-ink/40">
+          <BarChart3 className="size-4" />
         </span>
-        <p className="mt-3 text-sm font-semibold text-ink/50">No analytics yet</p>
-        <p className="mx-auto mt-1 max-w-[260px] text-xs text-ink/35">
-          Charts and per-flow breakdowns appear here once your flows start moving money.
+        <p className="text-sm text-ink/55">
+          <span className="font-semibold text-ink/70">Analytics</span> appear here once your flows start moving money.
         </p>
       </section>
     );

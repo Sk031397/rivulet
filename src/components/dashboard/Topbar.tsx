@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
+import { DEMO_PROFILE, useIsDemo } from "@/lib/demoClient";
 import { Bell, Plus, Search, X, GitFork, Users, Check, Info, AlertCircle } from "lucide-react";
 import type { Flow } from "@/data/dashboard";
 
@@ -174,7 +175,8 @@ function SearchDropdown({
 export default function Topbar() {
   const router = useRouter();
   const { user } = useUser();
-  const userName = user?.firstName ?? user?.fullName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? "there";
+  const isDemo = useIsDemo();
+  const userName = user?.firstName ?? user?.fullName ?? user?.emailAddresses[0]?.emailAddress?.split("@")[0] ?? (isDemo ? DEMO_PROFILE.firstName : "there");
 
   const [query, setQuery]           = useState("");
   const [searchOpen, setSearchOpen] = useState(false);

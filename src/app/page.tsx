@@ -3,6 +3,8 @@ import Hero from "@/components/Hero";
 import Features from "@/components/Features";
 import UseCases from "@/components/UseCases";
 import HowItWorks from "@/components/HowItWorks";
+import ProblemStats from "@/components/ProblemStats";
+import Comparison from "@/components/Comparison";
 import CTA from "@/components/CTA";
 import { getAllFlows } from "@/lib/store";
 import { toPublicFlow, type PublicFlow } from "@/lib/publicFlow";
@@ -38,7 +40,9 @@ export default async function LandingPage() {
       <Hero flow={flow} />
       <main>
         <Features />
+        <ProblemStats />
         <UseCases />
+        <Comparison />
         <HowItWorks />
         <CTA />
       </main>

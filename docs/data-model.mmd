@@ -1,0 +1,41 @@
+classDiagram
+  class Flow {
+    id
+    ownerId
+    name
+    status
+    goal
+    collected
+    currency
+    participants
+    deadline
+    disbursingAt
+  }
+  class Contribution {
+    id (PayPal capture id)
+    amount
+    payer
+    memberId
+    refundId
+    reversedAt
+    issue
+  }
+  class Payout {
+    id (flowId-pN)
+    label
+    amount
+    state
+    recipient
+    condition
+    releaseOn
+    issue
+  }
+  class RosterMember {
+    id
+    name
+    email
+    remindedAt
+  }
+  Flow "1" --> "*" Contribution
+  Flow "1" --> "*" Payout
+  Flow "1" --> "*" RosterMember

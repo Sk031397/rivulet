@@ -22,7 +22,9 @@ The group trip, paid for. Describe the trip in one sentence; Rivulet collects ev
 
 ## Inspiration
 
-Whoever books a group trip usually ends up fronting the money, then spends weeks chasing friends for their share. The same shape shows up in shared rent and utilities, event tickets, team gifts and club dues. Payment apps move money between two people. Nothing handles the real shape of a trip: many people paying in, several vendors paid out, a deadline, and a way back if it falls apart.
+Whoever books a group trip usually ends up fronting the money, then spends weeks chasing friends for their share. The same shape shows up in shared rent and utilities, event tickets, team gifts and club dues.
+
+It's common and it hurts. In Zelle's 2026 *Avoidance Economy* report, 76% of Gen Z who fronted money for a group trip were not fully repaid, 47% have gone into debt covering group expenses, and 55% say it created tension or hurt a relationship ([source](https://www.prnewswire.com/news-releases/zelle---the-avoidance-economy-why-americans-are-ghosting-payment-requests-302847557.html)). Payment apps move money between two people. Nothing handles the real shape of a trip: many people paying in, several vendors paid out, a deadline, and a way back if it falls apart.
 
 ## What It Does
 
@@ -39,6 +41,17 @@ Whoever books a group trip usually ends up fronting the money, then spends weeks
 **Money back.** If the trip is cancelled the organizer can refund everyone with one click, and a daily job refunds flows that miss their deadline. Refunds are refused once any payout has been sent.
 
 Also: a direct Send page, editable payouts in an AG Grid table (undo/redo, validation), a Payments ledger from PayPal transaction history, and an analytics overview.
+
+---
+
+## How It's Different
+
+Group money tools already exist, and they stop once the money is in:
+
+- **Bill-splitting apps** track who owes what *after* someone has already paid. The organizer still fronts the money.
+- **Money pools** collect upfront. PayPal ran Money Pools from 2017 to 2021 and [relaunched pooling in 2024](https://techcrunch.com/2024/11/14/paypals-new-feature-will-let-you-easily-split-expenses-with-family-and-friends/) "due to high customer demand", which shows the need is real. But the money lands with the organizer, who then pays each vendor themselves.
+
+Rivulet finishes the job. It plans the trip from one sentence or an invoice. It pays the villa, flights and dinner directly once the pot is full, on a date, or after the organizer approves. It refunds everyone if the deadline is missed. The organizer never ends up holding the group's money.
 
 ---
 

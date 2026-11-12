@@ -1,0 +1,29 @@
+flowchart LR
+  classDef user fill:#FFF4D6,stroke:#E0A800,color:#1a1a2e
+  classDef app fill:#EEF0FF,stroke:#4B4BD8,color:#1a1a2e
+  classDef rules fill:#E6F7EF,stroke:#1F9D61,color:#1a1a2e
+  classDef ext fill:#FDECEC,stroke:#D94848,color:#1a1a2e
+
+  USERS["<b>People</b><br/>Organizer says the trip<br/>Friends pay their share<br/>Judges: Try the demo"]:::user
+
+  subgraph APP["Rivulet · Next.js 16 on Vercel"]
+    UI["<b>Pages</b><br/>Landing · Dashboard<br/>Pay page"]:::app
+    API["<b>API routes</b><br/>build-flow · read-invoice<br/>orders · capture<br/>approve · refund<br/>webhooks · daily cron"]:::app
+    AGENT["<b>AI agent</b><br/>plans the flow<br/>cannot move money"]:::app
+    RULES["<b>Money rules in code</b><br/>sum to the cent<br/>idempotent capture<br/>payout lock · refund guard<br/>83 unit tests"]:::rules
+  end
+
+  CLERK[("<b>Clerk</b><br/>sign-in")]:::ext
+  BEDROCK[("<b>Amazon Bedrock</b><br/>Nova Lite")]:::ext
+  PAYPAL[("<b>PayPal sandbox</b><br/>Orders · Payouts · Refunds<br/>Webhooks · Reporting · JS SDK")]:::ext
+  DB[("<b>Postgres</b><br/>Supabase")]:::ext
+
+  USERS --> UI
+  UI --> API
+  UI -.-> CLERK
+  API --> AGENT
+  API --> RULES
+  AGENT --> BEDROCK
+  RULES --> PAYPAL
+  RULES --> DB
+  PAYPAL -. "signed webhooks" .-> API

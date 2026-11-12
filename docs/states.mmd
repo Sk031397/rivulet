@@ -1,0 +1,16 @@
+stateDiagram-v2
+  [*] --> Collecting: flow created
+  Collecting --> NeedsApproval: goal met (safe holding state)
+  Collecting --> Refunded: cancelled or deadline missed
+  NeedsApproval --> PaidOut: payouts sent (automatic, or owner approves)
+  NeedsApproval --> Scheduled: remaining payouts have a release date
+  NeedsApproval --> NeedsApproval: a payout failed (fix recipient, retry)
+  NeedsApproval --> Collecting: payment refunded or reversed
+  NeedsApproval --> Refunded: cancelled
+  Scheduled --> PaidOut: daily job on release date
+  PaidOut --> NeedsApproval: payout failed or returned (retry)
+  Refunded --> [*]
+  PaidOut --> [*]
+
+  state "Needs approval" as NeedsApproval
+  state "Paid out" as PaidOut
