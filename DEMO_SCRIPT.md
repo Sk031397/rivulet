@@ -22,7 +22,9 @@ On screen: click **Build flow** and show the plan.
 
 > "Or I attach a booking invoice."
 
-On screen: attach `demo/invoice-casa-do-mar.pdf`. The payee, the €2,400 total and the due date are read, and the flow is built automatically.
+On screen: attach `demo/invoice-sea-breeze-usd.pdf`. The payee (Sea Breeze Rentals LLC), the $1,600 total and the due date are read, and the flow is built automatically.
+
+> "The AI can misread an email address. If it looks like one I already pay, Rivulet uses the address I know. Any new address waits for my approval: it's never paid automatically."
 
 ## 1:10–1:50 Friends pay with PayPal
 

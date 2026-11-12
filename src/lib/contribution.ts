@@ -96,7 +96,25 @@ export function recordContribution(
  * can check a date itself, so it never needs the owner to approve it.
  */
 export function hasPendingCondition(f: Pick<Flow, "payouts">): boolean {
-  return f.payouts.some((p) => p.state !== "paid" && Boolean(p.condition) && !p.releaseOn);
+  return f.payouts.some(
+    (p) => p.state !== "paid" && ((Boolean(p.condition) && !p.releaseOn) || Boolean(p.confirmRecipient)),
+  );
+}
+
+/**
+ * Mark every unpaid payout with a recipient as needing the owner's check,
+ * because its address came from an AI-read invoice. Returns how many were marked.
+ */
+export const INVOICE_RECIPIENT_CHECK = "Check the PayPal email read from the invoice";
+export function markInvoiceRecipients(f: Pick<Flow, "payouts">): number {
+  let marked = 0;
+  for (const p of f.payouts) {
+    if (p.state === "paid" || !p.recipient) continue;
+    p.confirmRecipient = true;
+    p.condition ??= INVOICE_RECIPIENT_CHECK;
+    marked += 1;
+  }
+  return marked;
 }
 
 /** Today's date as YYYY-MM-DD in UTC (the same clock the deadlines use). */
@@ -110,10 +128,12 @@ export function todayUtc(now: number = Date.now()): string {
  * manual condition is never "due" on its own — only an owner approval releases it.
  */
 export function payoutDue(
-  p: { state: string; condition?: string; releaseOn?: string },
+  p: { state: string; condition?: string; releaseOn?: string; confirmRecipient?: boolean },
   now: number = Date.now(),
 ): boolean {
   if (p.state === "paid") return false;
+  // An AI-read recipient waits for the owner, even past its release date.
+  if (p.confirmRecipient) return false;
   if (p.releaseOn) return p.releaseOn <= todayUtc(now);
   return !p.condition;
 }

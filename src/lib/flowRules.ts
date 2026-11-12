@@ -54,6 +54,31 @@ export interface Contact {
   address: string;
 }
 
+/**
+ * Collapse characters a vision model confuses when reading an address:
+ * l / 1 / i / | look alike, and so do o / 0.
+ */
+function confusableKey(address: string): string {
+  return address.trim().toLowerCase().replace(/[1i|]/g, "l").replace(/0/g, "o");
+}
+
+/**
+ * If `read` (an address the AI read off a document) is not one of the user's
+ * known addresses but is a look-alike of exactly one of them, return that known
+ * address. Otherwise null: an exact match needs no fix, and two look-alikes are
+ * ambiguous, so neither is guessed.
+ */
+export function matchKnownAddress(read: string, known: Contact[]): string | null {
+  const r = read.trim().toLowerCase();
+  if (!r) return null;
+  if (known.some((c) => c.address.trim().toLowerCase() === r)) return null;
+  const key = confusableKey(r);
+  const hits = new Set(
+    known.filter((c) => confusableKey(c.address) === key).map((c) => c.address.trim().toLowerCase()),
+  );
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
 /** "maya.lee@x.com" → "Maya Lee"; phone numbers are returned as-is. */
 export function nameFromAddress(address: string): string {
   if (!address.includes("@")) return address;

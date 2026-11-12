@@ -69,7 +69,9 @@ export async function listTransactions(): Promise<PayPalTransaction[] | null> {
     const params = new URLSearchParams({
       start_date: start.toISOString(),
       end_date: end.toISOString(),
-      page_size: "20",
+      // The account is shared by all users and results are filtered per user
+      // afterwards, so fetch enough that one user's recent payments are included.
+      page_size: "100",
       fields: "all",
     });
 
@@ -139,24 +141,6 @@ export function transactionsToActivity(details: PayPalTransaction[]): ActivityIt
       };
     })
     .slice(0, 10);
-}
-
-/** Derive the two monetary stats from real transactions. */
-export function transactionsToStats(details: PayPalTransaction[]): {
-  collected: number;
-  paidOut: number;
-  count: number;
-} {
-  let collected = 0;
-  let paidOut = 0;
-  let count = 0;
-  for (const t of (details ?? []).filter(isUsdTransaction)) {
-    const amt = Number(t.transaction_info?.transaction_amount?.value ?? 0);
-    if (amt >= 0) collected += amt;
-    else paidOut += Math.abs(amt);
-    count += 1;
-  }
-  return { collected, paidOut, count };
 }
 
 /**

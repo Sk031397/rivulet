@@ -4,6 +4,13 @@ import { getAllFlows, saveFlow } from "./store";
 
 const SAMPLE_ID = "sample-lisbon-trip";
 
+/**
+ * A PayPal SANDBOX personal account (not a real person). Using it as the sample
+ * villa host makes the demo payout land somewhere real in the sandbox, and makes
+ * it a known address, so a misread of it on the demo invoice is corrected.
+ */
+const DEMO_PAYEE = "sb-a6pl453848929@personal.example.com";
+
 /** A clearly-labelled sample so the demo dashboard isn't blank. Nothing has been paid into it. */
 function sampleFlow(now = new Date()): Flow {
   const deadline = new Date(now.getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
@@ -26,7 +33,7 @@ function sampleFlow(now = new Date()): Flow {
     deadline,
     contributions: [],
     payouts: [
-      { id: `${SAMPLE_ID}-p0`, label: "Villa host", amount: 1000, state: "pending", note: "Sample payout", recipient: "villa.host@example.com" },
+      { id: `${SAMPLE_ID}-p0`, label: "Villa host", amount: 1000, state: "pending", note: "Sample payout", recipient: DEMO_PAYEE },
       { id: `${SAMPLE_ID}-p1`, label: "Flights", amount: 600, state: "pending", note: "Sample payout", recipient: "flights@example.com" },
     ],
   };

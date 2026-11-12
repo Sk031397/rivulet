@@ -14,6 +14,7 @@ import {
   deadlineFromPrompt,
   groupSizeFromPrompt,
   isContributorLabel,
+  matchKnownAddress,
   validateDraft,
 } from "../src/lib/flowRules.ts";
 
@@ -186,4 +187,37 @@ test("plain dollars, or no currency at all, mean no override", () => {
 
 test("a request that mixes currencies is flagged, not guessed", () => {
   assert.equal(currencyFromPrompt("€500 for the hotel and £300 for flights"), "MIXED");
+});
+
+/* ─── addresses misread from an invoice ─────────────────────────────── */
+
+const known = [
+  { name: "Villa host", address: "sb-a6pl453848929@personal.example.com" },
+  { name: "Maya", address: "maya@example.com" },
+];
+
+test("an l read as 1 is corrected to the known address", () => {
+  // The exact misread Nova Lite made on the demo invoice.
+  assert.equal(matchKnownAddress("sb-a6p1453848929@personal.example.com", known), "sb-a6pl453848929@personal.example.com");
+});
+
+test("o / 0 and letter case are treated as look-alikes", () => {
+  assert.equal(matchKnownAddress("MAYA@EXAMPLE.C0M", known), "maya@example.com");
+});
+
+test("an exact known address needs no correction", () => {
+  assert.equal(matchKnownAddress("maya@example.com", known), null);
+});
+
+test("an address that is not a look-alike of anything known is left alone", () => {
+  assert.equal(matchKnownAddress("stranger@example.com", known), null);
+  assert.equal(matchKnownAddress("", known), null);
+});
+
+test("two known look-alikes are ambiguous, so nothing is guessed", () => {
+  const twins = [
+    { name: "A", address: "al@example.com" },
+    { name: "B", address: "a1@example.com" },
+  ];
+  assert.equal(matchKnownAddress("ai@example.com", twins), null);
 });

@@ -30,6 +30,9 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const [warnings, setWarnings] = useState<string[]>([]);
   const [reading, setReading] = useState(false);
   const [invoiceNote, setInvoiceNote] = useState("");
+  // The payee email the AI read from the last invoice. While it is still in the
+  // prompt, the built flow holds its payouts for the organizer to check.
+  const invoiceEmailRef = useRef<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Saved + past-recipient contacts, so the agent can resolve "pay Maya" to an address.
   const { contacts } = useAddressBook();
@@ -95,6 +98,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       if (!res.ok || !data.invoice || !data.prompt) throw new Error(data.error ?? "Couldn't read that invoice.");
 
       const inv = data.invoice;
+      invoiceEmailRef.current = inv.payeeEmail;
       setText(data.prompt);
       // Only build automatically when the line items add up; otherwise let the organizer check first.
       if (inv.itemsMatchTotal !== false) autoPrompt = data.prompt;
@@ -105,7 +109,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       ].filter(Boolean);
       const warn = inv.itemsMatchTotal === false ? " The line items don't add up to the total, so check the amount." : "";
       setInvoiceNote(
-        `Read from “${file.name}”: ${bits.join(", ") || "nothing clear"}.${warn} ${autoPrompt ? "Building the flow now; edit the prompt and rebuild to add who's going or a deadline." : "Check it, then press Build flow."}`,
+        `Read from “${file.name}”: ${bits.join(", ") || "nothing clear"}.${warn} ${autoPrompt ? `Building the flow now.${inv.payeeEmail ? " Payouts to the email it read wait for your approval, so check it." : ""} Edit the prompt and rebuild to add who's going or a deadline.` : "Check it, then press Build flow."}`,
       );
     } catch (e) {
       setError((e as Error).message ?? "Couldn't read that invoice.");
@@ -121,6 +125,8 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const build = async (override?: string) => {
     const prompt = (override ?? text).trim();
     if (!prompt || building || countdown > 0) return;
+    const invoiceEmail = invoiceEmailRef.current;
+    const fromInvoice = Boolean(invoiceEmail && prompt.toLowerCase().includes(invoiceEmail.toLowerCase()));
     setBuilding(true);
     setError("");
     setMode("");
@@ -132,6 +138,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
+          fromInvoice,
           contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
         }),
       });

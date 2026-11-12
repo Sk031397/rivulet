@@ -133,7 +133,7 @@ export function extractJson(text: string): unknown {
 
 const INSTRUCTION = `Read this invoice or booking confirmation. Reply with ONLY a JSON object, no other text:
 {"payee": the business or person to be paid, or null,
- "payeeEmail": their email address if one is printed, or null,
+ "payeeEmail": the email address to pay (for example after "pay by PayPal to"), copied exactly character for character. Do not change letters into digits or digits into letters: "l" and "1" are different. Use null only if no email is printed,
  "total": the total amount due as a number, or null,
  "currency": one of "USD","EUR","GBP","CAD","AUD", or null,
  "dueDate": the payment due date as YYYY-MM-DD, or null,

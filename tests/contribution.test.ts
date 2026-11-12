@@ -14,6 +14,7 @@ import {
   formatMoney,
   hasPendingCondition,
   isPastDeadline,
+  markInvoiceRecipients,
   payoutDue,
   planResplit,
   paymentIssues,
@@ -359,4 +360,38 @@ test("contribution errors name the right currency", () => {
   const r = validateContribution({ goal: 100, collected: 90, status: "Collecting", currency: "EUR" }, 50);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /€10\.00/);
+});
+
+/* ─── recipients read from an invoice ───────────────────────────────── */
+
+test("an invoice-read recipient is marked for the owner's check", () => {
+  const f = flow({
+    payouts: [
+      { id: "trip-abcd-p0", label: "Villa", amount: 100, state: "pending", note: "", recipient: "host@example.com" },
+      { id: "trip-abcd-p1", label: "No address", amount: 0, state: "pending", note: "" },
+    ],
+  });
+  assert.equal(markInvoiceRecipients(f), 1);
+  assert.equal(f.payouts[0].confirmRecipient, true);
+  assert.ok(f.payouts[0].condition, "the reason is shown to the owner");
+  assert.equal(f.payouts[1].confirmRecipient, undefined, "a payout with no address has nothing to check");
+});
+
+test("an invoice-read recipient is never paid automatically, even on its release date", () => {
+  const p = { state: "pending", releaseOn: "2026-01-01", confirmRecipient: true };
+  assert.equal(payoutDue(p, Date.parse("2026-06-01T12:00:00Z")), false);
+  assert.equal(payoutDue({ ...p, confirmRecipient: false }, Date.parse("2026-06-01T12:00:00Z")), true);
+});
+
+test("a full pot with an invoice-read recipient holds for approval instead of paying out", () => {
+  const f = flow({
+    payouts: [
+      { id: "trip-abcd-p0", label: "Villa", amount: 100, state: "pending", note: "", recipient: "host@example.com", releaseOn: "2026-01-01" },
+    ],
+  });
+  markInvoiceRecipients(f);
+  const r = recordContribution(f, { id: "CAP1", amount: 100 });
+  assert.equal(r.shouldDisburse, false);
+  assert.equal(f.status, "Needs approval");
+  assert.equal(hasPendingCondition(f), true);
 });

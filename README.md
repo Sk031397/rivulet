@@ -93,7 +93,7 @@ Trip cancelled or deadline missed → refund every payment (owner button or dail
 | Payouts v1 | Paying vendors when the goal is met |
 | Payments v2 refunds | Returning each contributor's payment in full (idempotent per capture) |
 | Webhooks (`verify-webhook-signature`) | Confirming payout outcomes |
-| Transaction Reporting | The Payments ledger, stat cards and activity feed |
+| Transaction Reporting | The Payments ledger and activity feed, filtered to each user's own payments and refunds (stat cards come from the user's flows) |
 | JavaScript SDK | Checkout buttons on the pay page |
 | OAuth 2.0 | Server-side auth with an in-process token cache |
 
@@ -147,7 +147,7 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk · 
 - Reminder emails need an email provider (`RESEND_API_KEY`); without one, use the copy-message button.
 - Money in other currencies is shown correctly on each flow and its pay page, but the overview, Payments ledger and activity feed add amounts together, so they count US-dollar activity only.
 - Non-USD flows have not been paid end to end in the PayPal sandbox. Whether a sandbox account accepts a given currency depends on its settings.
-- Invoice reading takes images (PNG, JPEG, WebP) and PDFs. When the line items add up to the total the flow is built straight away; otherwise you check it first. Payouts only go out once the pot is full.
+- Invoice reading takes images (PNG, JPEG, WebP) and PDFs. When the line items add up to the total the flow is built straight away; otherwise you check it first. The model can misread an address, so a look-alike of an address you already pay (l/1/i, o/0) is corrected to it, and any other invoice address is never paid automatically; it waits for your approval.
 - The daily job (deadline refunds and scheduled payouts) has not been observed running on Vercel; the routines it calls are the same ones used by the owner's buttons.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. What each event does to a flow is unit-tested (`tests/webhook.test.ts`), and the signature check is the same one the payout events already pass in the sandbox; only the live delivery of those event types is untested.
 

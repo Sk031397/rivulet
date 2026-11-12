@@ -67,6 +67,13 @@ export interface Payout {
   issue?: string;
   /** Last payout item status PayPal reported for this payout. */
   itemStatus?: string;
+  /**
+   * The recipient was read from an uploaded invoice by the AI, not typed by the
+   * organizer. A model can misread an address (for example "l" as "1"), so this
+   * payout is never sent automatically, not even on its release date, until the
+   * owner approves it.
+   */
+  confirmRecipient?: boolean;
 }
 
 export interface FlowResource {

@@ -1,13 +1,20 @@
-import { DEMO_USER_ID, getUserId } from "@/lib/session";
+import { getUserId } from "@/lib/session";
 import { listTransactions, transactionsToActivity } from "@/lib/paypal";
+import { getAllFlows } from "@/lib/store";
+import { ownTransactions } from "@/lib/ownTransactions";
 
+/**
+ * GET /api/activity — recent PayPal activity for the signed-in user.
+ * The PayPal account is shared by every user, so only transactions that
+ * belong to this user's own flows (their contributors' payments and the
+ * refunds they issued) are shown.
+ */
 export async function GET() {
   const userId = await getUserId();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
-  // The shared demo account never shows the sandbox account's real PayPal history.
-  const details = userId === DEMO_USER_ID ? null : await listTransactions();
-  if (details && details.length) {
+  const details = ownTransactions(await listTransactions(), await getAllFlows(userId));
+  if (details.length) {
     return Response.json({ items: transactionsToActivity(details), mode: "paypal" });
   }
   return Response.json({ items: [], mode: "empty" });

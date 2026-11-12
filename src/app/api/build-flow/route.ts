@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { getUserId } from "@/lib/session";
 import { runFlowAgent } from "@/lib/agent";
-import { checkRecipient, isBlankRecipient, nameFromAddress, type Contact } from "@/lib/flowRules";
+import { checkRecipient, isBlankRecipient, matchKnownAddress, nameFromAddress, type Contact } from "@/lib/flowRules";
 import { getAllFlows, saveFlow } from "@/lib/store";
+import { markInvoiceRecipients } from "@/lib/contribution";
 import { MODEL_ID, makeBedrock } from "@/lib/bedrock";
 
 const MAX_PROMPT_CHARS = 1000;
@@ -79,10 +80,14 @@ export async function POST(req: NextRequest) {
 
   let prompt = "";
   let clientContacts: unknown;
+  let fromInvoice = false;
   try {
-    const body = (await req.json()) as { prompt?: unknown; contacts?: unknown };
+    const body = (await req.json()) as { prompt?: unknown; contacts?: unknown; fromInvoice?: unknown };
     prompt = (body?.prompt ?? "").toString().trim();
     clientContacts = body?.contacts;
+    // Set by the prompt box when the payee's email was read from an invoice by the AI.
+    // It can only add a safety hold, never remove one, so trusting the client is fine.
+    fromInvoice = body?.fromInvoice === true;
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
@@ -114,6 +119,27 @@ export async function POST(req: NextRequest) {
         : reply ||
           "The assistant couldn't turn that into a valid flow. Try stating the total amount and who gets paid how much.";
       return Response.json({ error: "agent_incomplete", message, steps }, { status: 422 });
+    }
+
+    // An address the AI read from an invoice could be misread (e.g. "l" as "1").
+    // If it is, or looks like, an address this user already pays, use that one.
+    // Anything unknown is held: nothing is paid to it until the organizer approves.
+    if (fromInvoice) {
+      const unknown: typeof flow.payouts = [];
+      for (const p of flow.payouts) {
+        if (p.state === "paid" || !p.recipient) continue;
+        const fixed = matchKnownAddress(p.recipient, contacts);
+        if (fixed) {
+          warnings.push(`The invoice was read as "${p.recipient}". Using your known address ${fixed} instead.`);
+          p.recipient = fixed;
+          continue;
+        }
+        const known = contacts.some((c) => c.address.trim().toLowerCase() === p.recipient!.trim().toLowerCase());
+        if (!known) unknown.push(p);
+      }
+      if (markInvoiceRecipients({ payouts: unknown }) > 0) {
+        warnings.push("The payee's email was read from the invoice. Check it: nothing is paid to it until you approve.");
+      }
     }
 
     // Persist so contributors can pay into it and captures can find it.

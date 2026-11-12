@@ -1,6 +1,7 @@
-import { DEMO_USER_ID, getUserId } from "@/lib/session";
+import { getUserId } from "@/lib/session";
 import { isUsdTransaction, listTransactions } from "@/lib/paypal";
 import { getAllFlows } from "@/lib/store";
+import { ownTransactions } from "@/lib/ownTransactions";
 import { currencyOf } from "@/lib/contribution";
 import type { Payment } from "@/data/dashboard";
 
@@ -36,7 +37,9 @@ export async function GET() {
   }
 
   // ── Source 1: PayPal transaction history ────────────────────────────
-  const details = userId === DEMO_USER_ID ? null : await listTransactions();
+  // The PayPal account is shared by every user, so keep only this user's own
+  // payments and refunds (matched by the capture/refund ids their flows recorded).
+  const details = ownTransactions(await listTransactions(), allFlows);
   if (details && details.length > 0) {
     for (const t of details.filter(isUsdTransaction)) {
       const info = t.transaction_info ?? {};
