@@ -40,9 +40,9 @@ export function MobileTopbar() {
 /** Fixed bottom tab bar — the mobile equivalent of the desktop Sidebar. */
 export function MobileNav() {
   const pathname = usePathname() ?? "";
-  // Show only the 5 most essential destinations on mobile
+  // Show only the most essential destinations on mobile
   const mobileItems = SIDEBAR.filter((s) =>
-    ["/dashboard", "/dashboard/send", "/dashboard/flows", "/dashboard/payments", "/dashboard/people"].includes(s.path)
+    ["/dashboard", "/dashboard/flows", "/dashboard/payments", "/dashboard/people"].includes(s.path)
   );
   return (
     <nav

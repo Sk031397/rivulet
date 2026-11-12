@@ -40,37 +40,6 @@ export function emailConfigured(): boolean {
   return resend !== null;
 }
 
-/** Branded "you received money" receipt for a Send payout (email recipients only). */
-export async function sendPaymentReceivedEmail(opts: {
-  to: string;
-  amount: number;
-  note?: string;
-}): Promise<void> {
-  const noteHtml = opts.note
-    ? `<tr><td style="padding:16px;background:#ffffff;border-radius:12px;font-size:14px;color:#555555;">&ldquo;${escapeHtml(opts.note)}&rdquo;</td></tr><tr><td style="height:16px;"></td></tr>`
-    : "";
-  await sendEmail({
-    to: opts.to,
-    subject: `You received $${opts.amount.toFixed(2)} on Rivulet`,
-    html: `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f6f5f1;font-family:ui-sans-serif,system-ui,Arial,sans-serif;color:#1a1a1a;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f5f1;padding:32px 0;">
-<tr><td align="center">
-<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;">
-<tr><td style="padding:0 8px;">
-<p style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#4f46e5;margin:0 0 8px;">Rivulet</p>
-<h1 style="font-size:24px;font-weight:800;margin:0 0 8px;color:#1a1a1a;">You received money</h1>
-<p style="font-size:16px;color:#555555;margin:0 0 24px;">Someone just sent you <strong style="color:#1a1a1a;">$${opts.amount.toFixed(2)}</strong> through Rivulet.</p>
-${noteHtml}
-<p style="font-size:14px;color:#555555;margin:0 0 8px;">It's on its way via PayPal. If a PayPal account is linked to this email, it lands there automatically — otherwise PayPal will email you a link to claim it.</p>
-<p style="font-size:14px;color:#888888;margin:32px 0 0;">Sent with Rivulet — let money find its way.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body></html>`,
-  });
-}
-
 /** Branded "you're invited" email with a join link. */
 export async function sendInviteEmail(opts: { to: string; inviteLink: string }): Promise<void> {
   await sendEmail({

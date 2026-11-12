@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * A single address-book entry. The address is either an email or a phone
- * number — the same values the Send flow accepts as a recipient.
+ * number — the same values a payout accepts as a recipient.
  */
 export interface Contact {
   /** Display name (falls back to the address local-part when unknown). */

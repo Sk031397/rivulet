@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { DEMO_PROFILE, useIsDemo } from "@/lib/demoClient";
-import { ArrowLeft, Settings, HelpCircle, LogOut, User, ChevronUp } from "lucide-react";
+import { ArrowLeft, LogOut, ChevronUp } from "lucide-react";
 import Mark from "@/components/Mark";
 import { BRAND } from "@/data/content";
 import { SIDEBAR } from "@/data/dashboard";
@@ -30,12 +30,6 @@ function UserMenu({ name, email, onClose }: { name: string; email: string; onClo
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
-  const items = [
-    { icon: User,        label: "View profile", href: "/dashboard/settings" },
-    { icon: Settings,    label: "Settings",     href: "/dashboard/settings" },
-    { icon: HelpCircle,  label: "Help & support", href: "#" },
-  ];
-
   return (
     <div
       ref={ref}
@@ -52,24 +46,8 @@ function UserMenu({ name, email, onClose }: { name: string; email: string; onClo
         </div>
       </div>
 
-      {/* nav items */}
-      <ul className="py-1">
-        {items.map(({ icon: Icon, label, href }) => (
-          <li key={label}>
-            <Link
-              href={href}
-              onClick={onClose}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-ultra/8 hover:text-ultra"
-            >
-              <Icon className="size-4 text-ink/50" />
-              {label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-
       {/* sign out */}
-      <div className="border-t border-ink/5 py-1">
+      <div className="py-1">
         <button
           type="button"
           onClick={() => {

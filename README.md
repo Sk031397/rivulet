@@ -90,7 +90,7 @@ Trip cancelled or deadline missed → refund every payment (owner button or dail
 | API | Used for |
 |---|---|
 | Orders v2 (create, get, capture) | One order per contributor, tagged with the flow id and checked at capture |
-| Payouts v1 | Paying vendors when the goal is met; the direct Send page |
+| Payouts v1 | Paying vendors when the goal is met |
 | Payments v2 refunds | Returning each contributor's payment in full (idempotent per capture) |
 | Webhooks (`verify-webhook-signature`) | Confirming payout outcomes |
 | Transaction Reporting | The Payments ledger, stat cards and activity feed |
@@ -113,7 +113,7 @@ src/
 ├── app/
 │   ├── page.tsx                 Landing page
 │   ├── pay/[id]/                Public contributor page (share, deadline, PayPal checkout)
-│   ├── dashboard/               Overview, Send, Flows, Payments, People, Templates, Settings
+│   ├── dashboard/               Overview, Flows, Payments, People, Templates
 │   └── api/
 │       ├── build-flow/          AI agent
 │       ├── read-invoice/        Reads an attached invoice image into a draft sentence
@@ -147,7 +147,7 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk · 
 - Reminder emails need an email provider (`RESEND_API_KEY`); without one, use the copy-message button.
 - Money in other currencies is shown correctly on each flow and its pay page, but the overview, Payments ledger and activity feed add amounts together, so they count US-dollar activity only.
 - Non-USD flows have not been paid end to end in the PayPal sandbox. Whether a sandbox account accepts a given currency depends on its settings.
-- Invoice reading takes images only (PNG, JPEG, WebP), not PDFs, and is checked by you before anything is built.
+- Invoice reading takes images (PNG, JPEG, WebP) and PDFs. When the line items add up to the total the flow is built straight away; otherwise you check it first. Payouts only go out once the pot is full.
 - The daily job (deadline refunds and scheduled payouts) has not been observed running on Vercel; the routines it calls are the same ones used by the owner's buttons.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. What each event does to a flow is unit-tested (`tests/webhook.test.ts`), and the signature check is the same one the payout events already pass in the sandbox; only the live delivery of those event types is untested.
 

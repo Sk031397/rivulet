@@ -1,6 +1,6 @@
 import {
-  LayoutGrid, GitFork, ArrowLeftRight, Users, LayoutTemplate, Settings,
-  Send, Plane, Home, Mountain, PartyPopper, Car, Utensils,
+  LayoutGrid, GitFork, ArrowLeftRight, Users, LayoutTemplate,
+  Plane, Home, Mountain, PartyPopper, Car, Utensils,
   type LucideIcon,
 } from "lucide-react";
 
@@ -14,12 +14,10 @@ export interface SidebarItem {
 
 export const SIDEBAR: SidebarItem[] = [
   { icon: LayoutGrid,    label: "Overview",  path: "/dashboard"           },
-  { icon: Send,          label: "Send",      path: "/dashboard/send"      },
   { icon: GitFork,       label: "Flows",     path: "/dashboard/flows"     },
   { icon: ArrowLeftRight,label: "Payments",  path: "/dashboard/payments"  },
   { icon: Users,         label: "People",    path: "/dashboard/people"    },
   { icon: LayoutTemplate,label: "Templates", path: "/dashboard/templates" },
-  { icon: Settings,      label: "Settings",  path: "/dashboard/settings"  },
 ];
 
 /* ─── Stats ─────────────────────────────────────────────────────────── */

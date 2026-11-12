@@ -40,7 +40,7 @@ It's common and it hurts. In Zelle's 2026 *Avoidance Economy* report, 76% of Gen
 
 **Money back.** If the trip is cancelled the organizer can refund everyone with one click, and a daily job refunds flows that miss their deadline. Refunds are refused once any payout has been sent.
 
-Also: a direct Send page, editable payouts in an AG Grid table (undo/redo, validation), a Payments ledger from PayPal transaction history, and an analytics overview.
+Also: editable payouts in an AG Grid table (undo/redo, validation), a Payments ledger from PayPal transaction history, and an analytics overview.
 
 ---
 
