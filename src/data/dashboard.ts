@@ -1,5 +1,5 @@
 import {
-  LayoutGrid, GitFork, ArrowLeftRight, Users, LayoutTemplate,
+  LayoutGrid, GitFork, ArrowLeftRight, LayoutTemplate,
   Plane, Home, Mountain, PartyPopper, Car, Utensils,
   type LucideIcon,
 } from "lucide-react";
@@ -16,7 +16,6 @@ export const SIDEBAR: SidebarItem[] = [
   { icon: LayoutGrid,    label: "Overview",  path: "/dashboard"           },
   { icon: GitFork,       label: "Flows",     path: "/dashboard/flows"     },
   { icon: ArrowLeftRight,label: "Payments",  path: "/dashboard/payments"  },
-  { icon: Users,         label: "People",    path: "/dashboard/people"    },
   { icon: LayoutTemplate,label: "Templates", path: "/dashboard/templates" },
 ];
 
@@ -166,22 +165,6 @@ export interface Payment {
   date: string;
   method: string;
   status: PaymentStatus;
-}
-
-/* ─── People ────────────────────────────────────────────────────────── */
-export type PersonRole = "Owner" | "Contributor" | "Recipient";
-
-export interface Person {
-  /** Unique key (the recipient address), used as the grid's row id. */
-  id?: string;
-  name: string;
-  initials: string;
-  role: PersonRole;
-  flows: string[];
-  contributed: number;
-  received: number;
-  since: string;
-  tone: string;
 }
 
 /* ─── Templates (these are product copy, not user data) ─────────────── */

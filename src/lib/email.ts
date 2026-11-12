@@ -40,30 +40,7 @@ export function emailConfigured(): boolean {
   return resend !== null;
 }
 
-/** Branded "you're invited" email with a join link. */
-export async function sendInviteEmail(opts: { to: string; inviteLink: string }): Promise<void> {
-  await sendEmail({
-    to: opts.to,
-    subject: "You're invited to Rivulet",
-    html: `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f6f5f1;font-family:ui-sans-serif,system-ui,Arial,sans-serif;color:#1a1a1a;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f5f1;padding:32px 0;">
-<tr><td align="center">
-<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;">
-<tr><td style="padding:0 8px;">
-<p style="font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#4f46e5;margin:0 0 8px;">Rivulet</p>
-<h1 style="font-size:24px;font-weight:800;margin:0 0 8px;color:#1a1a1a;">You're invited to Rivulet</h1>
-<p style="font-size:16px;color:#555555;margin:0 0 24px;">A simpler way to collect, split, and pay out money — describe a flow in plain English and the AI builds it for you.</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
-<tr><td style="background:#1a1a1a;border-radius:999px;"><a href="${escapeHtml(opts.inviteLink)}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Join Rivulet</a></td></tr>
-</table>
-<p style="font-size:14px;color:#888888;margin:0;">Sent with Rivulet — let money find its way.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body></html>`,
-  });
-}
+
 
 /** "Your share is still open" nudge. Returns true only if the email was really sent. */
 export async function sendReminderEmail(opts: {

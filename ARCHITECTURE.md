@@ -155,7 +155,6 @@ flowchart TD
     OV["Overview<br/>prompt box, stats, activity"]
     FL["Flows<br/>AG Grid, roster, re-split,<br/>approve, refund"]
     PAY["Payments<br/>ledger"]
-    PE["People"]
   end
 
   OV -->|"say the trip / attach invoice"| FL

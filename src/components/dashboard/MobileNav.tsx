@@ -42,7 +42,7 @@ export function MobileNav() {
   const pathname = usePathname() ?? "";
   // Show only the most essential destinations on mobile
   const mobileItems = SIDEBAR.filter((s) =>
-    ["/dashboard", "/dashboard/flows", "/dashboard/payments", "/dashboard/people"].includes(s.path)
+    ["/dashboard", "/dashboard/flows", "/dashboard/payments", "/dashboard/templates"].includes(s.path)
   );
   return (
     <nav

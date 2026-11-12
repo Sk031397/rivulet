@@ -202,19 +202,7 @@ export default function Topbar() {
       .slice(0, 5)
       .map((f) => ({ kind: "flow", id: f.id, name: f.name, status: f.status }));
 
-    // People — in a real app this would query an API; for now search is flow-only
-    // unless we have a stored people list
-    let peopleResults: SearchResult[] = [];
-    try {
-      const stored = JSON.parse(localStorage.getItem("rivulet-people") ?? "[]") as Array<{ name: string; role: string }>;
-      peopleResults = stored
-        .filter((p) => p.name.toLowerCase().includes(term))
-        .slice(0, 3)
-        .map((p) => ({ kind: "person", name: p.name, role: p.role }));
-    } catch { /* ignore */ }
-
-    const all = [...flowResults, ...peopleResults];
-    setResults(all);
+    setResults(flowResults);
     setSearchOpen(true);
   }, []);
 
@@ -224,14 +212,10 @@ export default function Topbar() {
     runSearch(q);
   };
 
-  const handleSelect = (r: SearchResult) => {
+  const handleSelect = (_r: SearchResult) => {
     setQuery("");
     setSearchOpen(false);
-    if (r.kind === "flow") {
-      router.push("/dashboard/flows");
-    } else {
-      router.push("/dashboard/people");
-    }
+    router.push("/dashboard/flows");
   };
 
   const focusPromptBox = () => {
@@ -269,7 +253,7 @@ export default function Topbar() {
               onChange={handleQueryChange}
               onFocus={() => { if (query.trim()) setSearchOpen(true); }}
               onKeyDown={(e) => { if (e.key === "Escape") { setQuery(""); setSearchOpen(false); } }}
-              placeholder="Search flows and people"
+              placeholder="Search flows"
               className="w-48 bg-transparent text-ink outline-none placeholder:text-ink/45"
               aria-label="Search flows and people"
               aria-expanded={searchOpen}

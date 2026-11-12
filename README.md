@@ -39,7 +39,7 @@ Copy `.env.example` to `.env` in the project root and fill it in.
 | `BEDROCK_API_KEY` | AI flow builder (hosted) | Simplest option on Vercel. |
 | `BEDROCK_ACCESS_KEY_ID`, `BEDROCK_SECRET_ACCESS_KEY`, `BEDROCK_SESSION_TOKEN` | AI flow builder (hosted) | Alternative to the API key. Vercel reserves the plain `AWS_*` names. |
 | `BEDROCK_REGION`, `BEDROCK_MODEL_ID` | Optional | Default `us-east-1` and `amazon.nova-lite-v1:0`. |
-| `RESEND_API_KEY`, `RESEND_FROM` | Optional | Receipt and invite emails. Skipped silently when unset. |
+| `RESEND_API_KEY`, `RESEND_FROM` | Optional | Reminder emails to people who still owe. Skipped silently when unset. |
 
 Locally, Bedrock credentials come from the normal AWS chain (`~/.aws`, SSO, …) when none of the `BEDROCK_*` keys are set.
 
@@ -113,7 +113,7 @@ src/
 ├── app/
 │   ├── page.tsx                 Landing page
 │   ├── pay/[id]/                Public contributor page (share, deadline, PayPal checkout)
-│   ├── dashboard/               Overview, Flows, Payments, People, Templates
+│   ├── dashboard/               Overview, Flows, Payments, Templates
 │   └── api/
 │       ├── build-flow/          AI agent
 │       ├── read-invoice/        Reads an attached invoice image into a draft sentence
@@ -121,7 +121,6 @@ src/
 │       ├── flows/               List, edit, delete; approve/ and refund/ for the owner
 │       ├── webhooks/paypal/     Signed payout confirmations
 │       ├── cron/expire/         Daily refund of flows past their deadline
-│       ├── send/  invite/       Direct payout and invite email
 │       └── payments/ activity/ stats/   Reporting
 ├── components/                  Landing sections and dashboard UI (AG Grid tables, TripControls)
 ├── data/                        Types, templates and landing copy
