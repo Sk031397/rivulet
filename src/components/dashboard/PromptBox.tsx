@@ -78,6 +78,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       return;
     }
     setReading(true);
+    let autoPrompt = "";
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -95,6 +96,8 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
 
       const inv = data.invoice;
       setText(data.prompt);
+      // Only build automatically when the line items add up; otherwise let the organizer check first.
+      if (inv.itemsMatchTotal !== false) autoPrompt = data.prompt;
       const bits = [
         inv.payee ? `payee ${inv.payee}` : null,
         inv.total !== null ? `total ${formatMoney(inv.total, inv.currency, "auto")}` : null,
@@ -102,7 +105,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       ].filter(Boolean);
       const warn = inv.itemsMatchTotal === false ? " The line items don't add up to the total, so check the amount." : "";
       setInvoiceNote(
-        `Read from “${file.name}”: ${bits.join(", ") || "nothing clear"}.${warn} Check it, then add who's going and when everyone pays.`,
+        `Read from “${file.name}”: ${bits.join(", ") || "nothing clear"}.${warn} ${autoPrompt ? "Building the flow now; edit the prompt and rebuild to add who's going or a deadline." : "Check it, then press Build flow."}`,
       );
     } catch (e) {
       setError((e as Error).message ?? "Couldn't read that invoice.");
@@ -110,10 +113,14 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
       setReading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+    // Build straight from the invoice, no second click needed.
+    if (autoPrompt) await build(autoPrompt);
   };
 
-  const build = async () => {
-    if (!text.trim() || building || countdown > 0) return;
+  /** `override` lets the invoice reader build straight away, before React has updated `text`. */
+  const build = async (override?: string) => {
+    const prompt = (override ?? text).trim();
+    if (!prompt || building || countdown > 0) return;
     setBuilding(true);
     setError("");
     setMode("");
@@ -124,7 +131,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: text.trim(),
+          prompt,
           contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
         }),
       });
@@ -176,7 +183,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         />
         <button
           type="button"
-          onClick={build}
+          onClick={() => build()}
           disabled={blocked}
           className="inline-flex items-center justify-center gap-2 rounded-2xl bg-ink px-6 py-4 font-bold text-white transition hover:bg-ultra disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -223,7 +230,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         >
           {reading ? <><Loader2 className="size-3.5 animate-spin" /> Reading invoice…</> : <><Paperclip className="size-3.5" /> Attach an invoice</>}
         </button>
-        <span className="text-xs text-ink/45">PNG, JPEG, WebP or PDF. We read the payee and amount; you check it before building.</span>
+        <span className="text-xs text-ink/45">PNG, JPEG, WebP or PDF. We read the payee and amount and build the flow for you.</span>
       </div>
 
       {/* What the agent did, step by step */}

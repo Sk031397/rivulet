@@ -30,7 +30,7 @@ Whoever books a group trip usually ends up fronting the money, then spends weeks
 
 **See who's in.** Name the people ("me, Sam, Priya and Jo") and the organizer sees exactly who has paid and who still owes, with reminder emails or a ready-made message for the group chat. Friends pick their name on the pay page, so each payment is tied to a person.
 
-**Roster, re-split and invoices.** Name the group and the organizer sees who has paid and who owes, with reminders. When someone drops out, a preview shows two outcomes (others cover it, or the cost drops with them and the payouts scale down to the cent). Attach a booking invoice and the app reads the payee, email, total, currency and due date into the prompt for you to check. Flows can be in USD, EUR, GBP, CAD or AUD.
+**Roster, re-split and invoices.** Name the group and the organizer sees who has paid and who owes, with reminders. When someone drops out, a preview shows two outcomes (others cover it, or the cost drops with them and the payouts scale down to the cent). Attach a booking invoice and the app reads the payee, email, total, currency and due date into the prompt and builds the flow straight away. Flows can be in USD, EUR, GBP, CAD or AUD.
 
 **Pay the vendors.** When the pot is full, Rivulet sends the PayPal payouts. A payout can also be scheduled for a date ("pay the villa host on March 3") and is released automatically that day. A signed PayPal webhook confirms each payout, and also catches a payment that is later refunded, reversed or disputed, so the pot never silently shrinks. If a payout fails, is returned, or sits unclaimed, the flow is flagged so the organizer can fix the recipient and retry.
 
@@ -102,6 +102,6 @@ Payments are mostly about trust and edge cases, not API calls. The interesting w
 - A release condition like "after the event" holds a flow for the organizer's approval; it is not verified automatically. A release *date* is paid automatically.
 - Reminder emails need an email provider to be configured; otherwise the organizer copies the message into the group chat.
 - Money in other currencies is correct on each flow and its pay page, but the overview, ledger and activity feed total US-dollar activity only. Non-USD flows have not been paid end to end in the sandbox, and whether a sandbox account accepts a currency depends on its settings.
-- Invoice reading takes images (PNG, JPEG, WebP) and PDFs, and always shows the organizer what it read before anything is built.
+- Invoice reading takes images (PNG, JPEG, WebP) and PDFs, and shows the organizer what it read when the flow is built. Payouts only go out once the pot is full, so nothing is paid on the invoice reading alone.
 - The daily job (deadline refunds and scheduled payouts) is deployed but has not yet been observed running. The routines it calls are the same ones the owner's buttons use, and the refund routine was tested with a real sandbox payment.
 - The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.
