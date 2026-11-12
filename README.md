@@ -85,6 +85,22 @@ Trip cancelled or deadline missed → refund every payment (owner button or dail
 
 **Currency.** A flow can be in USD, EUR, GBP, CAD or AUD, taken from what you write (`€1,800`, `£500`, `400 CAD`). Orders, the PayPal checkout button, payouts and every amount shown use that currency; flows without one are USD. A request that mixes currencies is refused rather than guessed.
 
+## Architecture
+
+![Rivulet architecture overview](docs/architecture-overview.png)
+
+The AI agent plans a flow but has no tool that moves money. Every payment, payout and refund goes through money rules enforced in code (pure functions, unit-tested), and every write to a flow runs in a row-locked transaction.
+
+### Life of a trip
+
+![Sequence: from "say the trip" to payout or refund](docs/sequence.png)
+
+### Flow states
+
+![Flow states: Collecting, Needs approval, Scheduled, Paid out, Refunded](docs/states.png)
+
+More diagrams (pages and user journey, data model, detailed architecture) and the design decisions behind them are in [ARCHITECTURE.md](ARCHITECTURE.md). Each image in `docs/` is rendered from the `.mmd` Mermaid file beside it.
+
 ## PayPal APIs used
 
 | API | Used for |

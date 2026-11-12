@@ -25,6 +25,9 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const [building, setBuilding] = useState(false);
   const [error, setError]     = useState("");
   const [mode, setMode]       = useState("");
+  // After a successful build the assistant's steps and warnings are tucked away;
+  // the organizer can open them. After a failure they stay open: they explain why.
+  const [showDetails, setShowDetails] = useState(false);
   const [countdown, setCountdown] = useState(0); // seconds remaining on rate-limit
   const [steps, setSteps]       = useState<AgentStep[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -71,6 +74,8 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
   const readInvoiceFile = async (file: File) => {
     setError("");
     setMode("");
+    setSteps([]);
+    setWarnings([]);
     setInvoiceNote("");
     if (!(INVOICE_TYPES as readonly string[]).includes(file.type)) {
       setError("Attach a PNG, JPEG, WebP or PDF of the invoice.");
@@ -131,6 +136,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
     setError("");
     setMode("");
     setSteps([]);
+    setShowDetails(false);
     setWarnings([]);
     try {
       const res = await fetch("/api/build-flow", {
@@ -214,7 +220,23 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
         ) : error ? (
           <p className="font-semibold text-coral">{error}</p>
         ) : mode ? (
-          <p className="font-semibold text-emerald-700">{mode}</p>
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold text-emerald-700">
+            <span>{mode}</span>
+            {(warnings.length > 0 || steps.length > 0) && (
+              <button
+                type="button"
+                onClick={() => setShowDetails((v) => !v)}
+                aria-expanded={showDetails}
+                className={`text-xs font-bold underline underline-offset-2 ${warnings.length > 0 ? "text-amber-800" : "text-ink/50"} hover:text-ink`}
+              >
+                {showDetails
+                  ? "Hide details"
+                  : warnings.length > 0
+                    ? `Show details (${warnings.length} to check)`
+                    : "Show details"}
+              </button>
+            )}
+          </p>
         ) : invoiceNote ? (
           <p className="font-semibold text-ultra">{invoiceNote}</p>
         ) : null}
@@ -242,7 +264,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
 
       {/* What the agent did, step by step */}
       <div aria-live="polite">
-        {warnings.length > 0 && (
+        {(!mode || showDetails) && warnings.length > 0 && (
           <ul className="mt-2 space-y-1.5 rounded-2xl bg-saffron/20 p-3 ring-1 ring-saffron/40">
             {warnings.map((w) => (
               <li key={w} className="flex items-start gap-2 text-sm font-semibold text-amber-900">
@@ -251,7 +273,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
             ))}
           </ul>
         )}
-        {steps.length > 0 && (
+        {(!mode || showDetails) && steps.length > 0 && (
           <div className="mt-3 rounded-2xl bg-paper p-4 ring-1 ring-ink/5">
             <p className="text-xs font-extrabold uppercase tracking-wider text-ink/50">What the assistant did</p>
             <ol className="mt-2 space-y-1.5">
@@ -280,7 +302,7 @@ export default function PromptBox({ onBuild }: { onBuild?: (flow: Flow) => void 
           <button
             key={s}
             type="button"
-            onClick={() => { setText(s); setError(""); setMode(""); }}
+            onClick={() => { setText(s); setError(""); setMode(""); setSteps([]); setWarnings([]); }}
             className="rounded-full bg-paper px-3.5 py-1.5 text-xs font-semibold text-ink/75 ring-1 ring-ink/10 transition hover:bg-ultra/10 hover:text-ultra"
           >
             {s}
