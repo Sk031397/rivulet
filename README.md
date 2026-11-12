@@ -21,9 +21,11 @@ npm test          # unit tests for the money rules and the AI guard rails (node:
 
 ---
 
+**Trying it without an account:** click **Try the demo** on the landing page. It opens the dashboard as a shared demo user (with one sample flow) and needs no sign-in. Real sign-in via Clerk still works.
+
 ## Configuration
 
-Create a `.env` file in the project root.
+Copy `.env.example` to `.env` in the project root and fill it in.
 
 | Variable | Needed for | Notes |
 |---|---|---|
@@ -147,8 +149,12 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk · 
 - Non-USD flows have not been paid end to end in the PayPal sandbox. Whether a sandbox account accepts a given currency depends on its settings.
 - Invoice reading takes images only (PNG, JPEG, WebP), not PDFs, and is checked by you before anything is built.
 - The daily job (deadline refunds and scheduled payouts) has not been observed running on Vercel; the routines it calls are the same ones used by the owner's buttons.
-- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.
+- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. What each event does to a flow is unit-tested (`tests/webhook.test.ts`), and the signature check is the same one the payout events already pass in the sandbox; only the live delivery of those event types is untested.
 
 ## Renaming the brand
 
 Edit `BRAND` in `src/data/content.ts` and the metadata title in `src/app/layout.tsx`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

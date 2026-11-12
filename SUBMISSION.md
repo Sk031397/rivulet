@@ -1,6 +1,8 @@
 # Rivulet — Hackathon Submission
 
-**Live demo:** https://rivulet-iota.vercel.app (PayPal sandbox)
+**Live demo:** https://rivulet-iota.vercel.app (PayPal sandbox). Click **Try the demo** on the landing page, no sign-in needed.
+
+**Source:** MIT licensed (see `LICENSE`). Setup is in `README.md` and `.env.example`.
 
 ---
 
@@ -20,7 +22,7 @@ The group trip, paid for. Describe the trip in one sentence; Rivulet collects ev
 
 ## Inspiration
 
-Whoever books a group trip usually ends up fronting the money, then spends weeks chasing friends for their share. Payment apps move money between two people. Nothing handles the real shape of a trip: many people paying in, several vendors paid out, a deadline, and a way back if it falls apart.
+Whoever books a group trip usually ends up fronting the money, then spends weeks chasing friends for their share. The same shape shows up in shared rent and utilities, event tickets, team gifts and club dues. Payment apps move money between two people. Nothing handles the real shape of a trip: many people paying in, several vendors paid out, a deadline, and a way back if it falls apart.
 
 ## What It Does
 
@@ -45,7 +47,7 @@ Also: a direct Send page, editable payouts in an AG Grid table (undo/redo, valid
 - **Next.js 16** (App Router, TypeScript), **Clerk** for sign-in, **Postgres** (Supabase) for storage, deployed on **Vercel**.
 - **Amazon Bedrock (Nova Lite)** through the Vercel AI SDK, as a **tool-calling agent**: `find_contacts`, `check_recipient`, `create_flow`. The agent can look up the user's contacts and validate payout destinations, but it cannot move money.
 - **Guard rails live in code, not the prompt.** Amounts must sum to the goal to the cent, recipients are validated, a payout can't be created as already paid, and payouts must name who *receives* money, not the contributors. Running the agent against live Bedrock showed a small model will invent a deadline, a payout date, group members or a release condition, so every one of those must trace back to the user's own words, checked in code. A date the user typed that didn't make it into the flow, or a "pay once…" that became an immediate payout, is reported as a warning instead of passing silently.
-- **Tested.** `npm test` runs 62 unit tests over the money rules (idempotent capture, one-time payout trigger, deadlines, refunds, shares, roster, re-split arithmetic, scheduled release, reversed payments, currency formatting), the invoice reader's handling of untrusted model output, and the AI guard rails.
+- **Tested.** `npm test` runs 83 unit tests over the money rules (idempotent capture, one-time payout trigger, deadlines, refunds, shares, roster, re-split arithmetic, scheduled release, reversed payments, currency formatting) and over what each PayPal webhook event does to a flow (payout success/failure/return, refunds, reversals, denials, disputes, redelivery), the invoice reader's handling of untrusted model output, and the AI guard rails.
 - **AG Grid Community 33.3** for the Flows, Payments, People and payouts tables, with a shared theme, live updates, pinned totals, and date sort/filter.
 
 ### PayPal Developer Platform
@@ -104,4 +106,4 @@ Payments are mostly about trust and edge cases, not API calls. The interesting w
 - Money in other currencies is correct on each flow and its pay page, but the overview, ledger and activity feed total US-dollar activity only. Non-USD flows have not been paid end to end in the sandbox, and whether a sandbox account accepts a currency depends on its settings.
 - Invoice reading takes images (PNG, JPEG, WebP) and PDFs, and shows the organizer what it read when the flow is built. Payouts only go out once the pot is full, so nothing is paid on the invoice reading alone.
 - The daily job (deadline refunds and scheduled payouts) is deployed but has not yet been observed running. The routines it calls are the same ones the owner's buttons use, and the refund routine was tested with a real sandbox payment.
-- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. The money rules they rely on (what counts as collected, who has paid) are unit-tested; the handlers themselves are not.
+- The webhook handlers for refunded, reversed and disputed payments have not been triggered by a real PayPal event. What each event does to a flow is unit-tested (`tests/webhook.test.ts`), and the signature check is the same one the payout events already pass in the sandbox; only the live delivery of those event types is untested.
